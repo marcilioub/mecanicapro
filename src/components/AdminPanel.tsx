@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { Machine, SectorGroup, Warehouse, JobRole, User } from '../types';
 import { useTheme } from './ThemeContext';
+import defaultAvatar from '../assets/default-avatar.svg';
 import NewUserModal from './NewUserModal';
 import { generateId } from '../utils';
 
@@ -201,7 +202,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                     </div>
                   )}
                   {activeTab === 'users' && (
-                    <div className="size-14 rounded-2xl bg-cover bg-center shrink-0 border border-slate-100 dark:border-slate-700 shadow-inner" style={{ backgroundImage: `url(${item.avatar})` }}></div>
+                    <div className="size-14 rounded-2xl bg-cover bg-center shrink-0 border border-slate-100 dark:border-slate-700 shadow-inner" style={{ backgroundImage: `url(${item.avatar || defaultAvatar})` }}></div>
                   )}
                   {activeTab !== 'machines' && activeTab !== 'users' && (
                     <div className="size-12 rounded-2xl bg-slate-50 dark:bg-slate-800 shrink-0 flex items-center justify-center text-slate-400">

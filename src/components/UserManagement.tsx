@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { User, Ticket, TicketStatus, UserStatus } from '../types';
 import NewUserModal from './NewUserModal';
+import defaultAvatar from '../assets/default-avatar.svg';
 
 interface UserManagementProps {
   currentUser: User;
@@ -105,7 +106,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUser, users, tic
                 <div className="flex items-start gap-4">
                   <div
                     className="bg-center bg-no-repeat aspect-square bg-cover rounded-full h-14 w-14 ring-2 ring-primary/10 shadow-inner"
-                    style={{ backgroundImage: `url(${user.avatar})` }}
+                    style={{ backgroundImage: `url(${user.avatar || defaultAvatar})` }}
                   ></div>
                   <div className="flex flex-1 flex-col justify-center">
                     <div className="flex items-center justify-between">

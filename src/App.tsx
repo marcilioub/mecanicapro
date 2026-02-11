@@ -17,6 +17,7 @@ import AdminPanel from './components/AdminPanel';
 import NewTicketModal from './components/NewTicketModal';
 import ConnectionMonitor from './components/ConnectionMonitor';
 import { useAuth } from './components/AuthContext';
+import defaultAvatar from './assets/default-avatar.svg';
 import { generateId } from './utils';
 
 const App: React.FC = () => {
@@ -198,7 +199,7 @@ const App: React.FC = () => {
         email: u.email,
         role: (u.role as UserRole) || UserRole.MECANICO,
         active: u.active !== undefined ? u.active : true,
-        avatar: u.avatar || u.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name || 'U')}&background=random`,
+        avatar: u.avatar || u.avatar_url || defaultAvatar,
         nickname: u.nickname || u.username,
         status: (u.status as UserStatus) || UserStatus.AVAILABLE,
         jobRoleId: u.job_role_id || u.jobRoleId || u.jobroleid
@@ -365,7 +366,7 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white font-sans">
         <div className="flex flex-col items-center gap-6">
-          <div className="bg-center bg-no-repeat aspect-square bg-cover rounded-2xl size-11 ring-2 ring-primary/20 shadow-sm" style={{ backgroundImage: `url(${user?.avatar || 'https://ui-avatars.com/api/?name=U&background=random'})` }}></div>
+          <div className="bg-center bg-no-repeat aspect-square bg-cover rounded-2xl size-11 ring-2 ring-primary/20 shadow-sm" style={{ backgroundImage: `url(${user?.avatar || defaultAvatar})` }}></div>
           <div className="flex flex-col items-center">
             <h2 className="text-xl font-black tracking-tighter italic">Mecânica<span className="text-primary">Pro</span></h2>
             <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-40 mt-2">Sincronizando Sistemas</p>

@@ -11,6 +11,7 @@ import {
 } from '../types';
 import { useTheme } from './ThemeContext';
 import { formatDate, formatSeconds } from '../utils';
+import defaultAvatar from '../assets/default-avatar.svg';
 
 interface DashboardProps {
   state: AppState; // Recebe o estado global conforme definido no App.tsx
@@ -100,7 +101,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       <header className="sticky top-0 z-50 flex items-center bg-white/70 dark:bg-slate-900/70 backdrop-blur-md p-4 lg:px-8 justify-between border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-center gap-3">
           <div className="relative">
-            <div className="bg-center bg-no-repeat aspect-square bg-cover rounded-2xl size-11 ring-2 ring-primary/20 shadow-sm" style={{ backgroundImage: `url(${user?.avatar || 'https://ui-avatars.com/api/?name=U&background=random'})` }}></div>
+            <div className="bg-center bg-no-repeat aspect-square bg-cover rounded-2xl size-11 ring-2 ring-primary/20 shadow-sm" style={{ backgroundImage: `url(${user?.avatar || defaultAvatar})` }}></div>
             <div className={`absolute -bottom-1 -right-1 size-4 rounded-full border-2 border-white dark:border-slate-800 ${statusConfig.color}`}></div>
           </div>
           <div className="hidden md:block">
