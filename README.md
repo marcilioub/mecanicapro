@@ -1,20 +1,133 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+============================================================
+🚗 MECÂNICAPRO
+Sistema Inteligente de Gestão para Oficinas Mecânicas
+============================================================
 
-# Run and deploy your AI Studio app
+📌 SOBRE O SISTEMA
 
-This contains everything you need to run your app locally.
+O MecânicaPro é um sistema web desenvolvido para gerenciar
+chamados técnicos, atendimentos e usuários dentro de oficinas
+mecânicas.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1-wsILZUvbTXlMKK0m2H-WZwr-3GqKx4o
-
-## Run Locally
-
-**Prerequisites:**  Node.js
+A plataforma permite organizar o fluxo de trabalho,
+acompanhar atendimentos em tempo real e melhorar a
+produtividade da equipe.
 
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+============================================================
+🎯 PRINCIPAIS FUNCIONALIDADES
+============================================================
+
+✔ Sistema de Chamados
+- Criar novos chamados
+- Assumir atendimento
+- Pausar chamado (com descrição obrigatória)
+- Finalizar chamado com relatório
+- Histórico completo de ações
+
+✔ Gestão de Usuários
+- Cadastro de novos usuários
+- Edição de e-mail
+- Controle de permissões
+- Painel administrativo
+
+✔ Chat Interno
+- Comunicação em tempo real
+- Registro de mensagens por chamado
+
+✔ Relatórios
+- Indicadores de produtividade
+- Chamados ativos, pausados e finalizados
+- Controle de desempenho da equipe
+
+
+============================================================
+🛠 TECNOLOGIAS UTILIZADAS
+============================================================
+
+- React + TypeScript
+- Vite
+- Tailwind CSS
+- Supabase (Banco de Dados)
+- Autenticação integrada
+- Integração com IA (Gemini API)
+
+
+============================================================
+💻 COMO RODAR O PROJETO LOCALMENTE
+============================================================
+
+PRÉ-REQUISITOS:
+- Node.js instalado
+
+1) Clonar o repositório:
+   git clone https://github.com/marcilioub/mecanicapro.git
+   cd mecanicapro
+
+2) Instalar dependências:
+   npm install
+
+3) Criar arquivo de variáveis de ambiente:
+   .env.local
+
+   Adicionar:
+
+   VITE_SUPABASE_URL=sua_url
+   VITE_SUPABASE_ANON_KEY=sua_chave
+   VITE_GEMINI_API_KEY=sua_chave
+
+4) Rodar o projeto:
+   npm run dev
+
+O sistema estará disponível em:
+http://localhost:5173
+
+
+============================================================
+🌐 DEPLOY
+============================================================
+
+O projeto pode ser publicado em:
+
+- Vercel
+- Netlify
+- Render
+- Railway
+
+
+============================================================
+🔒 SEGURANÇA
+============================================================
+
+NUNCA envie o arquivo .env para o GitHub.
+
+Use sempre:
+.env.local
+
+Mantenha o .env no .gitignore.
+
+
+============================================================
+📌 OBJETIVO DO SISTEMA
+============================================================
+
+O MecânicaPro foi criado para:
+
+- Organizar o fluxo de atendimento
+- Melhorar a comunicação interna
+- Centralizar informações
+- Aumentar a produtividade da oficina
+
+
+============================================================
+👨‍💻 DESENVOLVEDOR
+============================================================
+
+Antonio Marcilio
+GitHub: https://github.com/marcilioub
+
+
+============================================================
+🚗 MECÂNICAPRO
+Gestão inteligente para oficinas modernas.
+============================================================
