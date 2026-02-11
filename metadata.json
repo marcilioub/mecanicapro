@@ -1,0 +1,7 @@
+{
+  "name": "MecânicaPro",
+  "description": "Sistema completo de gestão de manutenção mecânica com dashboard administrativo, gestão de chamados em tempo real e relatórios de produtividade.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
