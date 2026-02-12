@@ -615,30 +615,50 @@ useEffect(() => {
             onComplete={async (notes, timeSpent) => {
               try {
                 const totalTime = (ticket.totalTimeSpent || 0) + timeSpent;
-                const { error } = await supabase.from('tickets').update({
-                  status: TicketStatus.COMPLETED,
-                  completed_at: new Date().toISOString(),
-                  total_time_spent: totalTime,
-                  notes
-                }).eq('id', ticket.id);
 
-                if (error) throw error;
+                // Update ticket and request the updated row to ensure DB write succeeded
+                const { data: updatedTicket, error: updateError } = await supabase
+                  .from('tickets')
+                  .update({
+                    status: TicketStatus.COMPLETED,
+                    completed_at: new Date().toISOString(),
+                    total_time_spent: totalTime,
+                    notes
+                  })
+                  .eq('id', ticket.id)
+                  .select()
+                  .single();
 
-                await supabase.from('activity_logs').insert([{
-                  user_id: state.currentUser?.id,
-                  user_name: state.currentUser?.name,
-                  user_role: state.currentUser?.role,
-                  action: `Finalizou o chamado #${ticket.id}`,
-                  details: `Obs: ${notes} | Tempo total: ${totalTime}s`,
-                  timestamp: new Date().toISOString()
-                }]);
+                if (updateError) throw updateError;
+
+                // Insert activity log
+                try {
+                  await supabase.from('activity_logs').insert([{
+                    user_id: state.currentUser?.id,
+                    user_name: state.currentUser?.name,
+                    user_role: state.currentUser?.role,
+                    action: `Finalizou o chamado #${ticket.id}`,
+                    details: `Obs: ${notes} | Tempo total: ${totalTime}s`,
+                    timestamp: new Date().toISOString()
+                  }]);
+                } catch (err: any) {
+                  console.error('Erro ao registrar activity_log (finalizar):', err);
+                }
+
+                // Optimistic local update: mark ticket as completed so counts update immediately
+                setState(prev => ({
+                  ...prev,
+                  tickets: prev.tickets.map(t => t.id === ticket.id ? { ...t, status: TicketStatus.COMPLETED, completedAt: updatedTicket?.completed_at || new Date().toISOString(), totalTimeSpent: totalTime } : t)
+                }));
 
                 showNotification('Chamado finalizado com sucesso!');
+
+                // Refresh data to ensure canonical state
                 await fetchData();
                 navigateTo('dashboard');
 
-                // Check for another active ticket for the current user
-                const activeTicket = state.tickets.find(t =>
+                // After refresh, if there's another active ticket, open it
+                const activeTicket = (state.tickets || []).find(t =>
                   t.status === TicketStatus.IN_PROGRESS &&
                   (t.mecanicoId === state.currentUser?.id || t.mechanicIds?.includes(state.currentUser?.id))
                 );
