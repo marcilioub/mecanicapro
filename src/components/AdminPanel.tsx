@@ -4,6 +4,7 @@ import { Machine, SectorGroup, Warehouse, JobRole, User } from '../types';
 import { useTheme } from './ThemeContext';
 import defaultAvatar from '../assets/default-avatar.svg';
 import NewUserModal from './NewUserModal';
+import Avatar from './Avatar';
 import { generateId } from '../utils';
 
 interface AdminPanelProps {
@@ -74,6 +75,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const handleSave = () => {
+    // Validação: nome obrigatório para qualquer cadastro
+    if (!formName || !formName.trim()) {
+      alert('Preencha a Denominação Principal antes de salvar.');
+      return;
+    }
     if (activeTab === 'machines') {
       const newList = [...machines];
       if (editingItem) {
@@ -202,7 +208,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                     </div>
                   )}
                   {activeTab === 'users' && (
-                    <div className="size-14 rounded-2xl bg-cover bg-center shrink-0 border border-slate-100 dark:border-slate-700 shadow-inner" style={{ backgroundImage: `url(${item.avatar || defaultAvatar})` }}></div>
+                    <div className="size-14 rounded-2xl shrink-0 border border-slate-100 dark:border-slate-700 shadow-inner overflow-hidden">
+                      <Avatar src={item.avatar || null} name={item.name} className="size-full bg-cover bg-center" />
+                    </div>
                   )}
                   {activeTab !== 'machines' && activeTab !== 'users' && (
                     <div className="size-12 rounded-2xl bg-slate-50 dark:bg-slate-800 shrink-0 flex items-center justify-center text-slate-400">

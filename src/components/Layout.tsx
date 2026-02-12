@@ -2,6 +2,7 @@ import React, { ReactNode } from 'react';
 import { useAuth } from './AuthContext';
 import { useTheme } from './ThemeContext';
 import defaultAvatar from '../assets/default-avatar.svg';
+import Avatar from './Avatar';
 import { TicketStatus, UserRole } from '../types';
 
 interface LayoutProps {
@@ -115,7 +116,7 @@ const Layout: React.FC<LayoutProps> = ({
                 <div className="p-4 mx-4 mb-6 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-700/50">
                     <div className="flex items-center gap-3 p-1 mb-3">
                             <div className="relative">
-                                <div className="size-11 rounded-xl bg-cover bg-center ring-2 ring-white dark:ring-slate-700 shadow-sm" style={{ backgroundImage: `url(${user.avatar || defaultAvatar})` }}></div>
+                                    <Avatar src={user.avatar || null} name={user.name} className="size-11 rounded-xl bg-cover bg-center ring-2 ring-white dark:ring-slate-700 shadow-sm" />
                             <div className="absolute -bottom-1 -right-1 size-3.5 bg-success border-2 border-white dark:border-slate-800 rounded-full"></div>
                         </div>
                         <div className="flex-1 min-w-0">

@@ -3,6 +3,7 @@ import React, { useState, useRef } from 'react';
 import { User } from '../types';
 import { useTheme } from './ThemeContext';
 import defaultAvatar from '../assets/default-avatar.svg';
+import Avatar from './Avatar';
 import { supabase } from '../supabase';
 
 interface ProfileProps {
@@ -16,7 +17,7 @@ const Profile: React.FC<ProfileProps> = ({ user, onBack, onLogout, onUpdateUser 
   const { theme, toggleTheme } = useTheme();
   const [nickname, setNickname] = useState(user.nickname || '');
   const [email, setEmail] = useState(user.email || '');
-  const [avatar, setAvatar] = useState(user.avatar || defaultAvatar);
+  const [avatar, setAvatar] = useState<string | null>(user.avatar || null);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [success, setSuccess] = useState<boolean>(false);
@@ -148,7 +149,7 @@ const Profile: React.FC<ProfileProps> = ({ user, onBack, onLogout, onUpdateUser 
               <div
                 className="size-40 rounded-[2.5rem] bg-slate-50 dark:bg-slate-800 border-4 border-white dark:border-slate-900 shadow-2xl overflow-hidden group-hover:scale-105 transition-transform duration-500"
               >
-                <img src={avatar || defaultAvatar} alt="Avatar" className="w-full h-full object-cover" />
+                <Avatar src={avatar || null} name={user.name} className="w-full h-full size-full bg-cover bg-center" />
               </div>
               <button
                 type="button"

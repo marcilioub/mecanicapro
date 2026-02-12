@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { TicketStatus, AppState, UserRole, User, Ticket, ChatMessage, UserStatus } from './types';
+import { TicketStatus, AppState, UserRole, User, Ticket, ChatMessage, UserStatus, SectorGroup, JobRole, ActivityLog } from './types';
 import { supabase } from './supabase';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
-
+import { mapMachineToDb, mapMachineFromDb, mapSectorGroupToDb, mapSectorGroupFromDb } from './types';
 // Componentes
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
@@ -18,6 +18,7 @@ import NewTicketModal from './components/NewTicketModal';
 import ConnectionMonitor from './components/ConnectionMonitor';
 import { useAuth } from './components/AuthContext';
 import defaultAvatar from './assets/default-avatar.svg';
+import Avatar from './components/Avatar';
 import { generateId } from './utils';
 
 const App: React.FC = () => {
@@ -57,66 +58,67 @@ const App: React.FC = () => {
   };
 
   // --- REALTIME SUBSCRIPTION (MESSAGES) ---
-  useEffect(() => {
-    const channel = supabase
-      .channel('messages_channel')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'messages' },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            const rawMsg = payload.new as any;
-            // Robust Mapping: Handle snake_case, camelCase and lowercase versions
-            const newMsg: ChatMessage = {
-              id: rawMsg.id,
-              senderId: rawMsg.sender_id || rawMsg.senderId || rawMsg.senderid,
-              receiverId: rawMsg.receiver_id || rawMsg.receiverId || rawMsg.receiverid,
-              text: rawMsg.text,
-              timestamp: rawMsg.timestamp,
-              read: rawMsg.read,
-              messageType: rawMsg.message_type || rawMsg.messageType || 'text',
-              attachmentUrl: rawMsg.attachment_url || rawMsg.attachmentUrl,
-              attachmentName: rawMsg.attachment_name || rawMsg.attachmentName,
-              attachmentSize: rawMsg.attachment_size || rawMsg.attachmentSize,
-              attachmentMimeType: rawMsg.attachment_mime_type || rawMsg.attachmentMimeType,
-              deliveredAt: rawMsg.delivered_at || rawMsg.deliveredAt
-            };
-            setState(prev => {
-              if (prev.messages.some(m => m.id === newMsg.id)) return prev;
-              return {
-                ...prev,
-                messages: [...prev.messages, newMsg]
-              };
-            });
-          } else if (payload.eventType === 'UPDATE') {
-            const rawMsg = payload.new as any;
-            const updatedMsg: ChatMessage = {
-              id: rawMsg.id,
-              senderId: rawMsg.sender_id || rawMsg.senderId || rawMsg.senderid,
-              receiverId: rawMsg.receiver_id || rawMsg.receiverId || rawMsg.receiverid,
-              text: rawMsg.text,
-              timestamp: rawMsg.timestamp,
-              read: rawMsg.read,
-              messageType: rawMsg.message_type || rawMsg.messageType || 'text',
-              attachmentUrl: rawMsg.attachment_url || rawMsg.attachmentUrl,
-              attachmentName: rawMsg.attachment_name || rawMsg.attachmentName,
-              attachmentSize: rawMsg.attachment_size || rawMsg.attachmentSize,
-              attachmentMimeType: rawMsg.attachment_mime_type || rawMsg.attachmentMimeType,
-              deliveredAt: rawMsg.delivered_at || rawMsg.deliveredAt
-            };
-            setState(prev => ({
-              ...prev,
-              messages: prev.messages.map(m => m.id === updatedMsg.id ? updatedMsg : m)
-            }));
-          }
-        }
-      )
-      .subscribe();
+  const [session, setSession] = useState(null);
+const [loading, setLoading] = useState(true);
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+useEffect(() => {
+  supabase.auth.getSession().then(({ data }) => {
+    setSession(data.session);
+    setLoading(false);
+  });
+
+  const { data: listener } = supabase.auth.onAuthStateChange(
+    (_event, session) => {
+      setSession(session);
+    }
+  );
+
+  return () => {
+    listener.subscription.unsubscribe();
+  };
+}, []);
+
+// Realtime subscription for activity_logs to keep timeline in sync
+useEffect(() => {
+  const chan = supabase.channel('public:activity_logs')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_logs' }, (payload) => {
+      try {
+        const row = (payload as any).new || (payload as any).old;
+        if (!row) return;
+        const mapped: ActivityLog = {
+          id: row.id,
+          timestamp: row.timestamp || row.created_at || new Date().toISOString(),
+          userId: row.user_id || row.userId || row.user || '',
+          userName: row.user_name || row.userName || '',
+          userRole: (row.user_role as UserRole) || UserRole.MECANICO,
+          action: row.action,
+          details: row.details
+        };
+
+        setState(prev => {
+          // INSERT: prepend, DELETE: remove, UPDATE: replace
+          if ((payload as any).eventType === 'DELETE' || (payload as any).type === 'DELETE') {
+            return { ...prev, activityLogs: prev.activityLogs.filter(l => l.id !== mapped.id) };
+          }
+          // For INSERT and UPDATE, replace existing or prepend
+          const filtered = prev.activityLogs.filter(l => l.id !== mapped.id);
+          return { ...prev, activityLogs: [mapped, ...filtered].slice(0, 200) };
+        });
+      } catch (err) {
+        console.error('Erro no realtime activity_logs handler:', err);
+      }
+    })
+    .subscribe();
+
+  return () => {
+    try {
+      supabase.removeChannel(chan);
+    } catch (e) {
+      // ignore
+    }
+  };
+}, []);
+
 
   // --- SINCRONIZAÇÃO COM AUTH CONTEXT ---
   const lastFetchedUserId = useRef<string | null>(null);
@@ -226,24 +228,44 @@ const App: React.FC = () => {
         { data: machines, error: machineError },
         { data: logs, error: logError },
         { data: warehouses, error: warehouseError },
-        { data: groups, error: groupError }
+        { data: groups, error: groupError },
+        { data: jobRolesData, error: jobRoleError }
       ] = await Promise.all([
         supabase.from('machines').select('*'),
         supabase.from('activity_logs').select('*').order('timestamp', { ascending: false }).limit(20),
         supabase.from('warehouses').select('*'),
-        supabase.from('sector_groups').select('*')
+        supabase.from('sector_groups').select('*'),
+        supabase.from('job_roles').select('*')
       ]);
 
       if (machineError) console.error('❌ Erro ao buscar máquinas:', machineError);
       if (logError) console.error('❌ Erro ao buscar logs:', logError);
       if (warehouseError) console.error('❌ Erro ao buscar galpões:', warehouseError);
       if (groupError) console.error('❌ Erro ao buscar grupos:', groupError);
+      if (jobRoleError) console.error('❌ Erro ao buscar funções:', jobRoleError);
 
-      console.log(`📊 Dados Secundários: ${machines?.length || 0} máquinas, ${warehouses?.length || 0} galpões, ${groups?.length || 0} grupos`);
+      console.log(`📊 Dados Secundários: ${machines?.length || 0} máquinas, ${warehouses?.length || 0} galpões, ${groups?.length || 0} grupos, ${jobRolesData?.length || 0} funções`);
 
-      if (machineError || warehouseError || groupError) {
-        showNotification('Erro ao carregar configurações (máquinas/galpões/grupos).', 'error');
+      if (machineError || warehouseError || groupError || jobRoleError) {
+        showNotification('Erro ao carregar configurações (máquinas/galpões/grupos/funções).', 'error');
       }
+
+      const mappedJobRoles: JobRole[] = (jobRolesData || []).map((r: any) => ({
+        id: r.id,
+        name: r.name || r.role_name || r.title || ''
+      }));
+
+      const mappedLogs: ActivityLog[] = (logs || []).map((l: any) => ({
+        id: l.id,
+        timestamp: l.timestamp || l.created_at || '',
+        userId: l.user_id || l.userId || l.user || '',
+        userName: l.user_name || l.userName || l.user_name || '',
+        userRole: (l.user_role as UserRole) || l.userRole || UserRole.MECANICO,
+        action: l.action,
+        details: l.details
+      }));
+
+      const mappedGroups: SectorGroup[] = (groups || []).map((g: any) => mapSectorGroupFromDb(g));
 
       setState(prev => ({
         ...prev,
@@ -251,9 +273,10 @@ const App: React.FC = () => {
         users: mappedUsers,
         messages: mappedMessages,
         machines: (machines as any[]) || [],
-        activityLogs: (logs as any[]) || [],
+        activityLogs: mappedLogs || [],
         warehouses: (warehouses as any[]) || [],
-        groups: (groups as any[]) || [],
+        groups: mappedGroups || [],
+        jobRoles: mappedJobRoles || [],
         connectionStatus: 'online',
         lastSync: new Date().toISOString(),
         dataStats: {
@@ -352,7 +375,19 @@ const App: React.FC = () => {
 
       console.log('✅ Chamado criado:', data);
       showNotification('Chamado criado com sucesso!');
-      fetchData(); // Recarrega para manter sincronizado
+      try {
+        await supabase.from('activity_logs').insert([{
+          user_id: state.currentUser?.id,
+          user_name: state.currentUser?.name,
+          user_role: state.currentUser?.role,
+          action: `Criou o chamado #${(data && data.id) || payload.id}`,
+          details: payload.title || data?.title || '',
+          timestamp: new Date().toISOString()
+        }]);
+      } catch (err: any) {
+        console.error('Erro ao registrar activity_log (criação):', err);
+      }
+      await fetchData(); // Recarrega para manter sincronizado
       setIsNewTicketModalOpen(false);
     } catch (err: any) {
       console.error("Erro ao criar chamado:", err);
@@ -366,7 +401,7 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white font-sans">
         <div className="flex flex-col items-center gap-6">
-          <div className="bg-center bg-no-repeat aspect-square bg-cover rounded-2xl size-11 ring-2 ring-primary/20 shadow-sm" style={{ backgroundImage: `url(${user?.avatar || defaultAvatar})` }}></div>
+          <Avatar src={user?.avatar || null} name={user?.name || user?.email} className="bg-center bg-no-repeat aspect-square bg-cover rounded-2xl size-11 ring-2 ring-primary/20 shadow-sm" />
           <div className="flex flex-col items-center">
             <h2 className="text-xl font-black tracking-tighter italic">Mecânica<span className="text-primary">Pro</span></h2>
             <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-40 mt-2">Sincronizando Sistemas</p>
@@ -416,9 +451,21 @@ const App: React.FC = () => {
             if (error) {
               showNotification('Erro ao aceitar chamado', 'error');
             } else {
+              try {
+                await supabase.from('activity_logs').insert([{
+                  user_id: state.currentUser?.id,
+                  user_name: state.currentUser?.name,
+                  user_role: state.currentUser?.role,
+                  action: `Aceitou o chamado #${id}`,
+                  details: `Iniciou atendimento`,
+                  timestamp: new Date().toISOString()
+                }]);
+              } catch (err: any) {
+                console.error('Erro ao registrar activity_log (aceite):', err);
+              }
               showNotification('Chamado aceito com sucesso!');
               setState(prev => ({ ...prev, activeTicketId: id, view: 'active_ticket' }));
-              fetchData();
+              await fetchData();
             }
           }}
           onDelete={async (id) => {
@@ -426,8 +473,20 @@ const App: React.FC = () => {
             if (error) {
               showNotification('Erro ao excluir chamado', 'error');
             } else {
+              try {
+                await supabase.from('activity_logs').insert([{
+                  user_id: state.currentUser?.id,
+                  user_name: state.currentUser?.name,
+                  user_role: state.currentUser?.role,
+                  action: `Excluiu o chamado #${id}`,
+                  details: '',
+                  timestamp: new Date().toISOString()
+                }]);
+              } catch (err: any) {
+                console.error('Erro ao registrar activity_log (exclusão):', err);
+              }
               showNotification('Chamado excluído');
-              fetchData();
+              await fetchData();
             }
           }}
           onNewTicket={() => setIsNewTicketModalOpen(true)}
@@ -446,7 +505,7 @@ const App: React.FC = () => {
               const { error } = await supabase.from('profiles').insert([userData]);
               if (error) throw error;
               showNotification('Usuário adicionado com sucesso!');
-              fetchData();
+              await fetchData();
             } catch (err: any) {
               console.error("Erro ao adicionar usuário:", err);
               showNotification(`Erro: ${err.message}`, 'error');
@@ -575,7 +634,7 @@ const App: React.FC = () => {
                 }]);
 
                 showNotification('Chamado finalizado com sucesso!');
-                fetchData();
+                await fetchData();
                 navigateTo('dashboard');
 
                 // Check for another active ticket for the current user
@@ -612,7 +671,7 @@ const App: React.FC = () => {
                 }]);
 
                 showNotification('Chamado pausado');
-                fetchData();
+                await fetchData();
                 navigateTo('dashboard');
               } catch (err: any) {
                 showNotification(`Erro ao pausar: ${err.message}`, 'error');
@@ -629,7 +688,7 @@ const App: React.FC = () => {
                   timestamp: new Date().toISOString()
                 }]);
                 showNotification('Chamado setorizado');
-                fetchData();
+                await fetchData();
               } catch (err: any) {
                 showNotification(`Erro ao setorizar: ${err.message}`, 'error');
               }
@@ -665,59 +724,148 @@ const App: React.FC = () => {
           users={state.users}
           onUpdateMachines={async (list) => {
             showNotification('Sincronizando máquinas...');
-            for (const item of list) {
-              if (item.id.startsWith('temp-')) {
-                const { id, ...rest } = item;
-                await supabase.from('machines').insert([rest]);
-              } else {
-                await supabase.from('machines').upsert([item]);
+            try {
+              // Detect deleted machines: items present in current state but missing from incoming list
+              const incomingIds = new Set(list.map((it: any) => it.id));
+              const toDelete = state.machines
+                .filter(m => !incomingIds.has(m.id) && !m.id.startsWith('temp-'))
+                .map(m => m.id);
+
+              for (const id of toDelete) {
+                try {
+                  const { error } = await supabase.from('machines').delete().eq('id', id);
+                  if (error) {
+                    console.error('Erro ao deletar máquina:', error);
+                    showNotification(`Erro ao deletar máquina: ${error.message}`, 'error');
+                  }
+                } catch (err: any) {
+                  console.error('Exceção ao deletar máquina:', err);
+                  showNotification(`Erro ao deletar máquina: ${err?.message || 'Erro desconhecido'}`, 'error');
+                }
               }
+
+              for (const item of list) {
+                if (item.id.startsWith('temp-')) {
+                  const { id, ...rest } = item;
+                  const { error } = await supabase
+                    .from('machines')
+                    .insert([mapMachineToDb(rest)]);
+
+                  if (error) {
+                    console.error('Erro ao inserir máquina:', error);
+                    showNotification(`Erro ao inserir máquina: ${error.message}`, 'error');
+                  }
+                } else {
+                  const { error } = await supabase
+                    .from('machines')
+                    .upsert([mapMachineToDb(item)]);
+
+                  if (error) {
+                    console.error('Erro ao atualizar máquina:', error);
+                    showNotification(`Erro ao atualizar máquina: ${error.message}`, 'error');
+                  }
+                }
+              }
+
+              showNotification('Máquinas atualizadas');
+              await fetchData();
+            } catch (err: any) {
+              console.error('Erro ao sincronizar máquinas:', err);
+              showNotification(`Erro ao sincronizar máquinas: ${err?.message || 'Erro desconhecido'}`, 'error');
             }
-            showNotification('Máquinas atualizadas');
-            fetchData();
           }}
           onUpdateGroups={async (list) => {
             showNotification('Sincronizando grupos...');
-            for (const item of list) {
-              if (item.id.startsWith('temp-')) {
-                const { id, ...rest } = item;
-                await supabase.from('sector_groups').insert([rest]);
-              } else {
-                await supabase.from('sector_groups').upsert([item]);
+            try {
+              for (const item of list) {
+                if (item.id.startsWith('temp-')) {
+                  const { id, ...rest } = item;
+                  const { error } = await supabase.from('sector_groups').insert([mapSectorGroupToDb(rest)]);
+                  if (error) {
+                    console.error('Erro ao inserir grupo:', error);
+                    showNotification(`Erro ao inserir grupo: ${error.message}`, 'error');
+                  }
+                } else {
+                  const { error } = await supabase.from('sector_groups').upsert([mapSectorGroupToDb(item)]);
+                  if (error) {
+                    console.error('Erro ao atualizar grupo:', error);
+                    showNotification(`Erro ao atualizar grupo: ${error.message}`, 'error');
+                  }
+                }
               }
+              showNotification('Grupos atualizados');
+              await fetchData();
+            } catch (err: any) {
+              console.error('Erro ao sincronizar grupos:', err);
+              showNotification(`Erro ao sincronizar grupos: ${err?.message || 'Erro desconhecido'}`, 'error');
             }
-            showNotification('Grupos atualizados');
-            fetchData();
           }}
           onUpdateWarehouses={async (list) => {
             showNotification('Sincronizando galpões...');
-            for (const item of list) {
-              if (item.id.startsWith('temp-')) {
-                const { id, ...rest } = item;
-                await supabase.from('warehouses').insert([rest]);
-              } else {
-                await supabase.from('warehouses').upsert([item]);
+            try {
+              for (const item of list) {
+                if (item.id.startsWith('temp-')) {
+                  const { id, ...rest } = item;
+                  const { error } = await supabase.from('warehouses').insert([rest]);
+                  if (error) {
+                    console.error('Erro ao inserir galpão:', error);
+                    showNotification(`Erro ao inserir galpão: ${error.message}`, 'error');
+                  }
+                } else {
+                  const { error } = await supabase.from('warehouses').upsert([item]);
+                  if (error) {
+                    console.error('Erro ao atualizar galpão:', error);
+                    showNotification(`Erro ao atualizar galpão: ${error.message}`, 'error');
+                  }
+                }
               }
+              showNotification('Galpões atualizados');
+              await fetchData();
+            } catch (err: any) {
+              console.error('Erro ao sincronizar galpões:', err);
+              showNotification(`Erro ao sincronizar galpões: ${err?.message || 'Erro desconhecido'}`, 'error');
             }
-            showNotification('Galpões atualizados');
-            fetchData();
           }}
           onUpdateJobRoles={async (list) => {
             showNotification('Sincronizando funções...');
-            for (const item of list) {
-              if (item.id.startsWith('temp-')) {
-                const { id, ...rest } = item;
-                await supabase.from('job_roles').insert([rest]);
-              } else {
-                await supabase.from('job_roles').upsert([item]);
+            try {
+              for (const item of list) {
+                if (item.id.startsWith('temp-')) {
+                  const { id, ...rest } = item;
+                  const { error } = await supabase.from('job_roles').insert([rest]);
+                  if (error) {
+                    console.error('Erro ao inserir função:', error);
+                    showNotification(`Erro ao inserir função: ${error.message}`, 'error');
+                  }
+                } else {
+                  const { error } = await supabase.from('job_roles').upsert([item]);
+                  if (error) {
+                    console.error('Erro ao atualizar função:', error);
+                    showNotification(`Erro ao atualizar função: ${error.message}`, 'error');
+                  }
+                }
               }
+              showNotification('Funções atualizadas');
+              await fetchData();
+            } catch (err: any) {
+              console.error('Erro ao sincronizar funções:', err);
+              showNotification(`Erro ao sincronizar funções: ${err?.message || 'Erro desconhecido'}`, 'error');
             }
-            showNotification('Funções atualizadas');
-            fetchData();
           }}
           onAddUser={async (userData) => {
-            await supabase.from('profiles').insert([userData]);
-            fetchData();
+            try {
+              const { error } = await supabase.from('profiles').insert([userData]);
+              if (error) {
+                console.error('Erro ao adicionar usuário:', error);
+                showNotification(`Erro ao adicionar usuário: ${error.message}`, 'error');
+              } else {
+                showNotification('Usuário adicionado com sucesso!');
+                await fetchData();
+              }
+            } catch (err: any) {
+              console.error('Erro ao adicionar usuário:', err);
+              showNotification(`Erro ao adicionar usuário: ${err?.message || 'Erro desconhecido'}`, 'error');
+            }
           }}
           onEditUser={async (userData) => {
             const { error } = await supabase.from('profiles').update(userData).eq('id', userData.id);
@@ -725,7 +873,7 @@ const App: React.FC = () => {
               showNotification('Erro ao atualizar usuário', 'error');
             } else {
               showNotification('Usuário atualizado com sucesso!');
-              fetchData();
+              await fetchData();
             }
           }}
           onDeleteUser={async (id) => {
@@ -734,7 +882,7 @@ const App: React.FC = () => {
               showNotification('Erro ao remover usuário', 'error');
             } else {
               showNotification('Usuário removido');
-              fetchData();
+              await fetchData();
             }
           }}
           onBack={() => navigateTo('dashboard')}
