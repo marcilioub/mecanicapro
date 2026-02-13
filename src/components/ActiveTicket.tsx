@@ -23,6 +23,7 @@ const ActiveTicket: React.FC<ActiveTicketProps> = ({ ticket, machine, onComplete
   // Estados para os novos fluxos
   const [actionType, setActionType] = useState<'pause' | 'transfer' | 'finish' | null>(null);
   const [reason, setReason] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
     const start = ticket.startedAt ? new Date(ticket.startedAt).getTime() : Date.now();
@@ -40,20 +41,30 @@ const ActiveTicket: React.FC<ActiveTicketProps> = ({ ticket, machine, onComplete
     setIsAiLoading(false);
   };
 
-  const handleConfirmAction = () => {
+  const handleConfirmAction = async () => {
     if (!reason.trim()) {
       alert("Por favor, informe a observação. Este campo é obrigatório.");
       return;
     }
-    if (actionType === 'pause') {
-      onPause(reason, sessionSeconds);
-    } else if (actionType === 'transfer') {
-      onTransfer(reason);
-    } else if (actionType === 'finish') {
-      onComplete(reason, sessionSeconds);
+    setIsProcessing(true);
+    try {
+      if (actionType === 'pause') {
+        await onPause(reason, sessionSeconds);
+      } else if (actionType === 'transfer') {
+        await onTransfer(reason);
+      } else if (actionType === 'finish') {
+        await onComplete(reason, sessionSeconds);
+        // After successful completion, close the active ticket view
+        onBack();
+      }
+    } catch (err) {
+      console.error('Erro ao processar ação do chamado:', err);
+      alert('Erro ao processar ação. Tente novamente.');
+    } finally {
+      setIsProcessing(false);
+      setActionType(null);
+      setReason('');
     }
-    setActionType(null);
-    setReason('');
   };
 
   const getMechanicNames = () => {
@@ -266,9 +277,10 @@ const ActiveTicket: React.FC<ActiveTicketProps> = ({ ticket, machine, onComplete
               </button>
               <button
                 onClick={handleConfirmAction}
-                className={`flex-2 px-8 py-4 text-white font-black rounded-2xl shadow-xl transition-all active:scale-95 uppercase tracking-widest text-xs ${actionType === 'pause' ? 'bg-amber-500 shadow-amber-500/20' : actionType === 'finish' ? 'bg-emerald-500 shadow-emerald-500/20' : 'bg-primary shadow-primary/20'}`}
+                disabled={isProcessing}
+                className={`flex-2 px-8 py-4 text-white font-black rounded-2xl shadow-xl transition-all active:scale-95 uppercase tracking-widest text-xs ${actionType === 'pause' ? 'bg-amber-500 shadow-amber-500/20' : actionType === 'finish' ? 'bg-emerald-500 shadow-emerald-500/20' : 'bg-primary shadow-primary/20'} ${isProcessing ? 'opacity-60 pointer-events-none' : ''}`}
               >
-                Processar Operação
+                {isProcessing ? 'Processando...' : 'Processar Operação'}
               </button>
             </div>
           </div>
