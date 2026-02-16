@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabase';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from './AuthContext';
 
 const Login: React.FC = () => {
   const [username, setUsername] = useState('');
@@ -8,6 +9,7 @@ const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { refreshSession } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,6 +40,12 @@ const Login: React.FC = () => {
         // Em vez de passar o usuário manualmente, confiamos no AuthContext.
         // O onAuthStateChange no AuthContext vai detectar o login e buscar o perfil.
         // Apenas redirecionamos para o dashboard.
+        try {
+          // Força atualização imediata do contexto para evitar precisar recarregar a página
+          await refreshSession();
+        } catch (e) {
+          console.warn('refreshSession falhou, prosseguindo com navigate', e);
+        }
         navigate('/');
       }
     } catch (err: any) {

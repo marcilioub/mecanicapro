@@ -8,6 +8,7 @@ interface AuthContextType {
     session: Session | null;
     loading: boolean;
     signOut: () => Promise<void>;
+    refreshSession: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -147,11 +148,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
     };
 
+    const refreshSession = async () => {
+        try {
+            const { data: { session: currentSession } } = await supabase.auth.getSession();
+            setSession(currentSession);
+
+            if (currentSession) {
+                await fetchUserProfile(currentSession);
+            } else {
+                setUser(null);
+                setLoading(false);
+            }
+        } catch (err: any) {
+            console.error('Erro ao atualizar sessão:', err);
+        }
+    };
+
     const contextValue = React.useMemo(() => ({
         user,
         session,
         loading,
-        signOut
+        signOut,
+        refreshSession
     }), [user, session, loading]);
 
     return (
