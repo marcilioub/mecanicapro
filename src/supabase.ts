@@ -7,10 +7,19 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error("Variáveis do Supabase não configuradas");
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-  },
-});
+export const supabase = createClient(
+  supabaseUrl,
+  supabaseAnonKey,
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: false,
+      storageKey: "mecanicapro-auth",
+    },
+    global: {
+      fetch: (...args) => fetch(...args),
+    },
+  }
+);
+
