@@ -67,6 +67,9 @@ useEffect(() => {
   supabase.auth.getSession().then(({ data }) => {
     setSession(data.session);
     setLoading(false);
+    console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL);
+    console.log('Supabase Key (anon):', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.slice(0, 8) + '...');
+
   });
 
   const { data: listener } = supabase.auth.onAuthStateChange(
