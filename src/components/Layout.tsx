@@ -87,6 +87,16 @@ const Layout: React.FC<LayoutProps> = ({
                         <span className="font-semibold text-sm">Equipe Técnica</span>
                     </button>
 
+                    {user.role === UserRole.ADMIN && (
+                        <button
+                            onClick={() => onNavigate('activity_report')}
+                            className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-300 group ${activeView === 'activity_report' ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800/50'}`}
+                        >
+                            <span className={`material-symbols-outlined transition-transform group-hover:scale-110 ${activeView === 'activity_report' ? 'filled' : ''}`}>timeline</span>
+                            <span className="font-semibold text-sm">Relatório Atividades</span>
+                        </button>
+                    )}
+
                     <button
                         onClick={() => onNavigate('chat')}
                         className={`flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all duration-300 group ${activeView === 'chat' ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800/50'}`}
@@ -176,10 +186,16 @@ const Layout: React.FC<LayoutProps> = ({
                     <span className="text-[9px] font-bold mt-0.5">Chat</span>
                 </button>
                 {user.role === UserRole.ADMIN && (
-                    <button onClick={() => onNavigate('admin_panel')} className={`flex flex-col items-center justify-center size-14 rounded-2xl transition-all ${activeView === 'admin_panel' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-slate-400'}`}>
-                        <span className={`material-symbols-outlined ${activeView === 'admin_panel' ? 'filled' : ''}`}>settings</span>
-                        <span className="text-[9px] font-bold mt-0.5">Config</span>
-                    </button>
+                    <>
+                        <button onClick={() => onNavigate('activity_report')} className={`flex flex-col items-center justify-center size-14 rounded-2xl transition-all ${activeView === 'activity_report' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-slate-400'}`}>
+                            <span className={`material-symbols-outlined ${activeView === 'activity_report' ? 'filled' : ''}`}>timeline</span>
+                            <span className="text-[9px] font-bold mt-0.5">Relatório</span>
+                        </button>
+                        <button onClick={() => onNavigate('admin_panel')} className={`flex flex-col items-center justify-center size-14 rounded-2xl transition-all ${activeView === 'admin_panel' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-slate-400'}`}>
+                            <span className={`material-symbols-outlined ${activeView === 'admin_panel' ? 'filled' : ''}`}>settings</span>
+                            <span className="text-[9px] font-bold mt-0.5">Config</span>
+                        </button>
+                    </>
                 )}
                 <button onClick={onLogout} className="flex flex-col items-center justify-center size-14 rounded-2xl text-slate-400">
                     <span className="material-symbols-outlined">logout</span>

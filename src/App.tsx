@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { TicketStatus, AppState, UserRole, User, Ticket, ChatMessage, UserStatus, SectorGroup, JobRole, ActivityLog } from './types';
 import { supabase } from './supabase';
+import { logActivity, buildChamadoLog } from './utils/logActivity';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { mapMachineToDb, mapMachineFromDb, mapSectorGroupToDb, mapSectorGroupFromDb } from './types';
 // Componentes
@@ -8,6 +9,7 @@ import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import TicketList from './components/TicketList';
 import ActiveTicket from './components/ActiveTicket';
+import ActivityReport from './components/ActivityReport';
 import Layout from './components/Layout';
 import Profile from './components/Profile';
 import Report from './components/Report';
@@ -96,7 +98,6 @@ useEffect(() => {
         };
 
         setState(prev => {
-          // INSERT: prepend, DELETE: remove, UPDATE: replace
           if ((payload as any).eventType === 'DELETE' || (payload as any).type === 'DELETE') {
             return { ...prev, activityLogs: prev.activityLogs.filter(l => l.id !== mapped.id) };
           }
@@ -151,20 +152,17 @@ useEffect(() => {
       }
 
       // map messages with robust field selection
-      const mappedMessages: ChatMessage[] = (messages || []).map((m: any) => ({
-        id: m.id,
-        senderId: m.sender_id || m.senderId || m.senderid,
-        receiverId: m.receiver_id || m.receiverId || m.receiverid,
-        text: m.text,
-        timestamp: m.timestamp,
-        read: m.read,
-        messageType: m.message_type || m.messageType || 'text',
-        attachmentUrl: m.attachment_url || m.attachmentUrl,
-        attachmentName: m.attachment_name || m.attachmentName,
-        attachmentSize: m.attachment_size || m.attachmentSize,
-        attachmentMimeType: m.attachment_mime_type || m.attachmentMimeType,
-        deliveredAt: m.delivered_at || m.deliveredAt
-      }));
+     const mappedMessages: ChatMessage[] = (messages || []).map((m: any) => ({
+      id: m.id,
+      senderId: m.sender_id,
+      receiverId: m.receiver_id,
+      text: m.content,
+      timestamp: m.created_at,
+      read: false, // você ainda não tem controle de leitura no banco
+      messageType: 'text'
+    }));
+
+
 
       // Map tickets from snake_case (DB) to camelCase (TS)
       const mappedTickets: Ticket[] = (tickets || []).map((t: any) => ({
@@ -375,18 +373,13 @@ useEffect(() => {
 
       console.log('✅ Chamado criado:', data);
       showNotification('Chamado criado com sucesso!');
-      try {
-        await supabase.from('activity_logs').insert([{
-          user_id: state.currentUser?.id,
-          user_name: state.currentUser?.name,
-          user_role: state.currentUser?.role,
-          action: `Criou o chamado #${(data && data.id) || payload.id}`,
-          details: payload.title || data?.title || '',
-          timestamp: new Date().toISOString()
-        }]);
-      } catch (err: any) {
-        console.error('Erro ao registrar activity_log (criação):', err);
-      }
+      // registra atividade (não bloqueante)
+      await logActivity(buildChamadoLog({
+        type: 'create',
+        chamadoId: (data && data.id) || payload.id,
+        clienteNome: payload.requester,
+        usuarioNome: state.currentUser?.name
+      }), payload.title || data?.title || '');
       await fetchData(); // Recarrega para manter sincronizado
       setIsNewTicketModalOpen(false);
     } catch (err: any) {
@@ -451,44 +444,85 @@ useEffect(() => {
             if (error) {
               showNotification('Erro ao aceitar chamado', 'error');
             } else {
-              try {
-                await supabase.from('activity_logs').insert([{
-                  user_id: state.currentUser?.id,
-                  user_name: state.currentUser?.name,
-                  user_role: state.currentUser?.role,
-                  action: `Aceitou o chamado #${id}`,
-                  details: `Iniciou atendimento`,
-                  timestamp: new Date().toISOString()
-                }]);
-              } catch (err: any) {
-                console.error('Erro ao registrar activity_log (aceite):', err);
-              }
+              await logActivity(buildChamadoLog({
+                type: 'assign',
+                chamadoId: id,
+                clienteNome: state.tickets.find(t => t.id === id)?.requester,
+                usuarioNome: state.currentUser?.name
+              }), `Iniciou atendimento`);
               showNotification('Chamado aceito com sucesso!');
               setState(prev => ({ ...prev, activeTicketId: id, view: 'active_ticket' }));
               await fetchData();
             }
           }}
-          onDelete={async (id) => {
-            const { error } = await supabase.from('tickets').delete().eq('id', id);
-            if (error) {
-              showNotification('Erro ao excluir chamado', 'error');
-            } else {
-              try {
-                await supabase.from('activity_logs').insert([{
-                  user_id: state.currentUser?.id,
-                  user_name: state.currentUser?.name,
-                  user_role: state.currentUser?.role,
-                  action: `Excluiu o chamado #${id}`,
-                  details: '',
-                  timestamp: new Date().toISOString()
-                }]);
-              } catch (err: any) {
-                console.error('Erro ao registrar activity_log (exclusão):', err);
-              }
-              showNotification('Chamado excluído');
-              await fetchData();
-            }
-          }}
+          onDeleteUser={async (id: string) => {
+  console.log("🗑 Tentando remover usuário ID:", id);
+
+  const previousUsers = state.users;
+
+  // 🔎 1. Verificar se existe no banco antes de deletar
+  const check = await supabase
+    .from('profiles')
+    .select('id, name, email')
+    .eq('id', id)
+    .maybeSingle();
+
+  console.log("🔍 Registro encontrado antes do delete:", check);
+
+  if (!check.data) {
+    console.warn("⚠️ Nenhum registro encontrado com esse ID no profiles.");
+    showNotification("Usuário não encontrado no banco.", "error");
+    return;
+  }
+
+  // 🚀 2. Optimistic UI
+  setState(prev => ({
+    ...prev,
+    users: prev.users.filter(u => u.id !== id)
+  }));
+
+  try {
+    const { error, status } = await supabase
+      .from('profiles')
+      .delete()
+      .eq('id', id);
+
+    console.log("📡 Status do delete:", status);
+
+    if (error) {
+      console.error("❌ Erro ao remover usuário:", error);
+
+      // 🔁 Reverte estado
+      setState(prev => ({
+        ...prev,
+        users: previousUsers
+      }));
+
+      showNotification(`Erro ao remover usuário: ${error.message}`, "error");
+      return;
+    }
+
+    console.log("✅ Usuário removido com sucesso no Supabase");
+
+    // 📝 Registrar activity log (não bloqueante)
+    await logActivity(`Removeu o usuário ${check.data.name} - Email: ${check.data.email}`);
+
+    showNotification("Usuário removido com sucesso!");
+    await fetchData();
+
+  } catch (err: any) {
+    console.error("💥 Exceção ao remover usuário:", err);
+
+    // 🔁 Reverte estado
+    setState(prev => ({
+      ...prev,
+      users: previousUsers
+    }));
+
+    showNotification(`Erro inesperado: ${err?.message || "Erro desconhecido"}`, "error");
+  }
+}}
+
           onNewTicket={() => setIsNewTicketModalOpen(true)}
           currentUser={state.currentUser as any}
           navigateTo={navigateTo}
@@ -631,19 +665,13 @@ useEffect(() => {
 
                 if (updateError) throw updateError;
 
-                // Insert activity log
-                try {
-                  await supabase.from('activity_logs').insert([{
-                    user_id: state.currentUser?.id,
-                    user_name: state.currentUser?.name,
-                    user_role: state.currentUser?.role,
-                    action: `Finalizou o chamado #${ticket.id}`,
-                    details: `Obs: ${notes} | Tempo total: ${totalTime}s`,
-                    timestamp: new Date().toISOString()
-                  }]);
-                } catch (err: any) {
-                  console.error('Erro ao registrar activity_log (finalizar):', err);
-                }
+                // registra atividade (não bloqueante)
+                await logActivity(buildChamadoLog({
+                  type: 'finish',
+                  chamadoId: ticket.id,
+                  clienteNome: ticket.requester,
+                  usuarioNome: state.currentUser?.name
+                }), `Obs: ${notes} | Tempo total: ${totalTime}s`);
 
                 // Optimistic local update: mark ticket as completed so counts update immediately
                 setState(prev => ({
@@ -681,14 +709,12 @@ useEffect(() => {
 
                 if (error) throw error;
 
-                await supabase.from('activity_logs').insert([{
-                  user_id: state.currentUser?.id,
-                  user_name: state.currentUser?.name,
-                  user_role: state.currentUser?.role,
-                  action: `Pausou o chamado #${ticket.id}`,
-                  details: `Motivo: ${reason} | Tempo nesta sessão: ${timeSpent}s`,
-                  timestamp: new Date().toISOString()
-                }]);
+                await logActivity(buildChamadoLog({
+                  type: 'pause',
+                  chamadoId: ticket.id,
+                  clienteNome: ticket.requester,
+                  usuarioNome: state.currentUser?.name
+                }), `Motivo: ${reason} | Tempo nesta sessão: ${timeSpent}s`);
 
                 showNotification('Chamado pausado');
                 await fetchData();
@@ -699,14 +725,12 @@ useEffect(() => {
             }}
             onTransfer={async (reason) => {
               try {
-                await supabase.from('activity_logs').insert([{
-                  user_id: state.currentUser?.id,
-                  user_name: state.currentUser?.name,
-                  user_role: state.currentUser?.role,
-                  action: `Setorizou o chamado #${ticket.id}`,
-                  details: reason,
-                  timestamp: new Date().toISOString()
-                }]);
+                await logActivity(buildChamadoLog({
+                  type: 'edit',
+                  chamadoId: ticket.id,
+                  clienteNome: ticket.requester,
+                  usuarioNome: state.currentUser?.name
+                }), reason);
                 showNotification('Chamado setorizado');
                 await fetchData();
               } catch (err: any) {
@@ -733,6 +757,14 @@ useEffect(() => {
           currentUser={state.currentUser as User}
           onBack={() => navigateTo('dashboard')}
         />
+      )}
+
+      {state.view === 'activity_report' && (
+        state.currentUser?.role === UserRole.ADMIN ? (
+          <ActivityReport />
+        ) : (
+          <div className="p-10 text-center text-slate-500">Acesso negado. Apenas administradores podem ver este relatório.</div>
+        )
       )}
 
       {state.view === 'admin_panel' && (
@@ -797,6 +829,25 @@ useEffect(() => {
           onUpdateGroups={async (list) => {
             showNotification('Sincronizando grupos...');
             try {
+              // Detect deletions: itens presentes no estado atual mas ausentes na lista recebida
+              const incomingIds = new Set(list.map((it: any) => it.id));
+              const toDelete = state.groups
+                .filter(g => !incomingIds.has(g.id) && !g.id.startsWith('temp-'))
+                .map(g => g.id);
+
+              for (const id of toDelete) {
+                try {
+                  const { error } = await supabase.from('sector_groups').delete().eq('id', id);
+                  if (error) {
+                    console.error('Erro ao deletar grupo:', error);
+                    showNotification(`Erro ao deletar grupo: ${error.message}`, 'error');
+                  }
+                } catch (err: any) {
+                  console.error('Exceção ao deletar grupo:', err);
+                  showNotification(`Erro ao deletar grupo: ${err?.message || 'Erro desconhecido'}`, 'error');
+                }
+              }
+
               for (const item of list) {
                 if (item.id.startsWith('temp-')) {
                   const { id, ...rest } = item;
@@ -823,6 +874,24 @@ useEffect(() => {
           onUpdateWarehouses={async (list) => {
             showNotification('Sincronizando galpões...');
             try {
+              const incomingIds = new Set(list.map((it: any) => it.id));
+              const toDelete = state.warehouses
+                .filter(w => !incomingIds.has(w.id) && !w.id.startsWith('temp-'))
+                .map(w => w.id);
+
+              for (const id of toDelete) {
+                try {
+                  const { error } = await supabase.from('warehouses').delete().eq('id', id);
+                  if (error) {
+                    console.error('Erro ao deletar galpão:', error);
+                    showNotification(`Erro ao deletar galpão: ${error.message}`, 'error');
+                  }
+                } catch (err: any) {
+                  console.error('Exceção ao deletar galpão:', err);
+                  showNotification(`Erro ao deletar galpão: ${err?.message || 'Erro desconhecido'}`, 'error');
+                }
+              }
+
               for (const item of list) {
                 if (item.id.startsWith('temp-')) {
                   const { id, ...rest } = item;
@@ -849,6 +918,24 @@ useEffect(() => {
           onUpdateJobRoles={async (list) => {
             showNotification('Sincronizando funções...');
             try {
+              const incomingIds = new Set(list.map((it: any) => it.id));
+              const toDelete = state.jobRoles
+                .filter(j => !incomingIds.has(j.id) && !j.id.startsWith('temp-'))
+                .map(j => j.id);
+
+              for (const id of toDelete) {
+                try {
+                  const { error } = await supabase.from('job_roles').delete().eq('id', id);
+                  if (error) {
+                    console.error('Erro ao deletar função:', error);
+                    showNotification(`Erro ao deletar função: ${error.message}`, 'error');
+                  }
+                } catch (err: any) {
+                  console.error('Exceção ao deletar função:', err);
+                  showNotification(`Erro ao deletar função: ${err?.message || 'Erro desconhecido'}`, 'error');
+                }
+              }
+
               for (const item of list) {
                 if (item.id.startsWith('temp-')) {
                   const { id, ...rest } = item;
@@ -897,14 +984,52 @@ useEffect(() => {
             }
           }}
           onDeleteUser={async (id) => {
-            const { error } = await supabase.from('profiles').delete().eq('id', id);
-            if (error) {
-              showNotification('Erro ao remover usuário', 'error');
-            } else {
-              showNotification('Usuário removido');
-              await fetchData();
-            }
-          }}
+  const previousUsers = state.users;
+
+  // Optimistic UI
+  setState(prev => ({
+    ...prev,
+    users: prev.users.filter(u => u.id !== id)
+  }));
+
+  try {
+    // 1️⃣ Desvincular tickets do usuário
+    const { error: ticketError } = await supabase
+      .from('tickets')
+      .update({ mecanico_id: null })
+      .eq('mecanico_id', id);
+
+    if (ticketError) throw ticketError;
+
+    // 2️⃣ Agora excluir o perfil
+    const response = await supabase
+      .from('profiles')
+      .delete()
+      .eq('id', id)
+      .select();
+
+    console.log('Delete response raw:', response);
+
+    const { data, error, status } = response as any;
+
+    if (error) throw error;
+
+    console.log('Usuário removido no Supabase:', data);
+    showNotification('Usuário removido com sucesso');
+    await fetchData();
+
+  } catch (err: any) {
+    // Reverter se algo der errado
+    setState(prev => ({ ...prev, users: previousUsers }));
+
+    console.error('Erro ao remover usuário:', err);
+    showNotification(
+      `Erro ao remover usuário: ${err?.message || 'Erro desconhecido'}`,
+      'error'
+    );
+  }
+}}
+
           onBack={() => navigateTo('dashboard')}
         />
       )}
