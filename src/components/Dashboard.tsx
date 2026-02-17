@@ -13,6 +13,7 @@ import { useTheme } from './ThemeContext';
 import { formatDate, formatSeconds } from '../utils';
 import defaultAvatar from '../assets/default-avatar.svg';
 import Avatar from './Avatar';
+import ActivityTimeline from './ActivityTimeline';
 
 interface DashboardProps {
   state: AppState; // Recebe o estado global conforme definido no App.tsx
@@ -195,23 +196,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         <div className="lg:col-span-2 space-y-4">
           <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Linha do Tempo</h3>
           <div className="space-y-3">
-            {activityLogs.slice(0, 6).map((log) => {
-              const cfg = getLogIcon(log.action);
-              return (
-                <div key={log.id} className="flex items-center gap-4 p-4 bg-white dark:bg-slate-900/40 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
-                  <div className={`size-10 rounded-xl shrink-0 flex items-center justify-center ${cfg.color}`}>
-                    <span className="material-symbols-outlined text-lg">{cfg.icon}</span>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[10px] font-black text-primary uppercase">{formatDate(log.timestamp)}</p>
-                    <p className="text-sm font-bold truncate">
-                      <span className="text-slate-900 dark:text-white">{log.userName}</span>
-                      <span className="text-slate-500 font-medium ml-2">{log.action}</span>
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
+            <ActivityTimeline limit={6} />
           </div>
         </div>
 

@@ -220,6 +220,7 @@ export interface AppState {
     | 'tickets'
     | 'users'
     | 'report'
+    | 'activity_report'
     | 'active_ticket'
     | 'profile'
     | 'chat'

@@ -107,12 +107,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const handleDelete = (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este item?')) return;
-    if (activeTab === 'users') onDeleteUser(id);
-    else if (activeTab === 'machines') onUpdateMachines(machines.filter(m => m.id !== id));
-    else if (activeTab === 'groups') onUpdateGroups(groups.filter(g => g.id !== id));
-    else if (activeTab === 'warehouses') onUpdateWarehouses(warehouses.filter(w => w.id !== id));
+    setDeleteTarget({ id, name: (machines.find(m => m.id === id) || groups.find(g => g.id === id) || warehouses.find(w => w.id === id) || jobRoles.find(j => j.id === id) || users.find(u => u.id === id))?.name || '' , tab: activeTab });
+  };
+
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; tab: string } | null>(null);
+
+  const confirmDelete = () => {
+    if (!deleteTarget) return;
+    const id = deleteTarget.id;
+    if (deleteTarget.tab === 'users') onDeleteUser(id);
+    else if (deleteTarget.tab === 'machines') onUpdateMachines(machines.filter(m => m.id !== id));
+    else if (deleteTarget.tab === 'groups') onUpdateGroups(groups.filter(g => g.id !== id));
+    else if (deleteTarget.tab === 'warehouses') onUpdateWarehouses(warehouses.filter(w => w.id !== id));
     else onUpdateJobRoles(jobRoles.filter(j => j.id !== id));
+
+    setDeleteTarget(null);
   };
 
   const currentList = activeTab === 'machines' ? machines :
@@ -262,6 +271,34 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           }}
           editData={editingItem}
         />
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4 animate-in fade-in duration-300">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-[2rem] shadow-2xl p-8 border border-white/10">
+            <div className="size-20 bg-red-500/10 text-red-500 rounded-3xl flex items-center justify-center mb-6 mx-auto shadow-inner border border-red-500/20">
+              <span className="material-symbols-outlined text-5xl">warning</span>
+            </div>
+            <h3 className="text-xl font-black text-slate-900 dark:text-white text-center mb-3 font-display uppercase tracking-tight">Confirmar Exclusão</h3>
+            <p className="text-sm font-bold text-slate-500 text-center mb-8 px-2 leading-relaxed">
+              Confirma exclusão de <span className="font-extrabold text-red-500">{deleteTarget.name || deleteTarget.id}</span>? Esta ação removerá permanentemente o registro.
+            </p>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={confirmDelete}
+                className="w-full bg-red-500 text-white font-black py-4 rounded-2xl shadow-xl shadow-red-500/20 active:scale-95 transition-all text-xs uppercase tracking-widest"
+              >
+                Confirmar e Excluir
+              </button>
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="w-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-black py-4 rounded-2xl active:scale-95 transition-all text-xs uppercase tracking-widest"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {isModalOpen && (
