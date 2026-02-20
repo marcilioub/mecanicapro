@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from './AuthContext';
 import { supabase } from '../supabase';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { User, ActivityLog, UserRole } from '../types';
+import { User, ActivityLog } from '../types';
+import { isAdmin } from '../utils';
 
 const formatDateTime = (iso?: string) => {
   if (!iso) return '';
@@ -28,15 +29,37 @@ const ActivityReport: React.FC = () => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    (async () => {
-      const { data, error } = await supabase.from('profiles').select('id,name').order('name', { ascending: true });
-      if (error) {
-        console.error('Erro ao buscar mecânicos', error);
-        return;
-      }
-      setMechanics((data || []).map((r: any) => ({ id: r.id, name: r.name } as User)));
-    })();
-  }, []);
+  (async () => {
+    const { data, error } = await supabase
+    .from('profiles')
+    .select(`
+      id,
+      name,
+      email,
+      active,
+      job_roles (
+        name
+      )
+    `)
+    .order('name', { ascending: true });
+
+
+    if (error) {
+      console.error('Erro ao buscar usuários', error);
+      return;
+    }
+
+    setMechanics(
+  (data || []).map((r: any) => ({
+    id: r.id,
+    name: r.name,
+    email: r.email,
+    role: r.job_roles?.name ?? "",
+    active: r.active
+  })));
+  })();
+}, []);
+
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -49,15 +72,39 @@ const ActivityReport: React.FC = () => {
       const { data, error } = await q;
       if (error) throw error;
       console.debug('[ActivityReport] fetchLogs result count', { count: (data || []).length });
-      setLogs((data || []).map((l: any) => ({
-        id: l.id,
-        timestamp: l.timestamp || l.created_at,
-        userId: l.user_id || '',
-        userName: l.user_name || 'Sistema',
-        userRole: l.user_role,
-        action: l.action,
-        details: l.details
-      })));
+
+      const rows: any[] = data || [];
+      const userIds = Array.from(new Set(rows.map(r => r.user_id).filter(Boolean)));
+
+      // Buscar perfis para obter job_role_id e nome
+      let profilesMap: Record<string, any> = {};
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase.from('profiles').select('id,name,job_role_id').in('id', userIds);
+        profilesMap = (profiles || []).reduce((acc: any, p: any) => ({ ...acc, [p.id]: p }), {});
+      }
+
+      // Buscar job roles para mapear nome
+      const jobRoleIds = Array.from(new Set(Object.values(profilesMap).map((p: any) => p.job_role_id).filter(Boolean)));
+      let jobRolesMap: Record<string, any> = {};
+      if (jobRoleIds.length > 0) {
+        const { data: jrs } = await supabase.from('job_roles').select('id,name').in('id', jobRoleIds);
+        jobRolesMap = (jrs || []).reduce((acc: any, j: any) => ({ ...acc, [j.id]: j }), {});
+      }
+
+      setLogs(rows.map((l: any) => {
+        const pid = l.user_id;
+        const profile = profilesMap[pid];
+        const roleName = profile ? (jobRolesMap[profile.job_role_id]?.name || profile.role) : undefined;
+        return {
+          id: l.id,
+          timestamp: l.timestamp || l.created_at,
+          userId: pid || '',
+          userName: l.user_name || profile?.name || 'Sistema',
+          userRole: roleName || 'Mecânico',
+          action: l.action,
+          details: l.details
+        } as ActivityLog;
+      }));
     } catch (err) {
       console.error('Erro ao buscar logs', err);
     } finally {
@@ -67,7 +114,7 @@ const ActivityReport: React.FC = () => {
 
   useEffect(() => { fetchLogs(); }, [selected, start, end]);
 
-  if (!user || user.role !== UserRole.ADMIN) {
+  if (!user || !isAdmin(user)) {
     return (
       <div className="p-6 max-w-4xl mx-auto">
         <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm text-center">

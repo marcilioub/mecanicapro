@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "../supabase";
-import { User } from "../types";
+import { User, ChatMessage } from "../types";
 import { useTheme } from "./ThemeContext";
 import AttachmentUploader from "./AttachmentUploader";
 
 interface ChatRoomProps {
   currentUser: User;
   users: User[];
+  messages: ChatMessage[];
   activeChatUserId: string | null;
   onSelectUser: (userId: string | null) => void;
+  onSendMessage: (receiverId: string | null, text: string, attachment?: any) => Promise<void>;
   onBack: () => void;
 }
 
@@ -24,13 +26,15 @@ interface Message {
 const ChatRoom: React.FC<ChatRoomProps> = ({
   currentUser,
   users,
+  messages: messagesProp,
   activeChatUserId,
   onSelectUser,
+  onSendMessage,
   onBack,
 }) => {
   const { theme, toggleTheme } = useTheme();
 
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState("");
   const [isMobile, setIsMobile] = useState(false);
 
@@ -45,71 +49,22 @@ const ChatRoom: React.FC<ChatRoomProps> = ({
     return () => window.removeEventListener("resize", checkScreen);
   }, []);
 
-  /* BUSCAR MENSAGENS */
+  /* Use mensagens providas pelo pai (App) como fonte de verdade */
   useEffect(() => {
-    if (!activeChatUserId) return;
+    if (!activeChatUserId) {
+      setMessages([]);
+      return;
+    }
+    const conv = (propsMessages: ChatMessage[]) => propsMessages.filter(m =>
+      (m.senderId === currentUser.id && m.receiverId === activeChatUserId) ||
+      (m.senderId === activeChatUserId && m.receiverId === currentUser.id)
+    ).sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    setMessages(conv(messagesProp || []));
+  }, [activeChatUserId, currentUser.id, messagesProp]);
 
-    const fetchMessages = async () => {
-      const { data, error } = await supabase
-        .from("messages")
-        .select("*")
-        .or(
-          `and(sender_id.eq.${currentUser.id},receiver_id.eq.${activeChatUserId}),and(sender_id.eq.${activeChatUserId},receiver_id.eq.${currentUser.id})`
-        )
-        .order("created_at", { ascending: true });
+  // Realtime & persistence handled at App level; ChatRoom consumes messages from props
 
-      if (!error && data) {
-        setMessages(data);
-      }
-    };
-
-    fetchMessages();
-  }, [activeChatUserId, currentUser.id]);
-
-  /* REALTIME */
-  useEffect(() => {
-    if (!activeChatUserId) return;
-
-    const channel = supabase
-      .channel("chat-room")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
-        (payload) => {
-          const newMessage = payload.new as Message;
-
-          if (
-            (newMessage.sender_id === currentUser.id &&
-              newMessage.receiver_id === activeChatUserId) ||
-            (newMessage.sender_id === activeChatUserId &&
-              newMessage.receiver_id === currentUser.id)
-          ) {
-            setMessages((prev) => [...prev, newMessage]);
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [activeChatUserId, currentUser.id]);
-
-  /* MARCAR COMO LIDA */
-  useEffect(() => {
-    if (!activeChatUserId) return;
-
-    const markAsRead = async () => {
-      await supabase
-        .from("messages")
-        .update({ read: true })
-        .eq("receiver_id", currentUser.id)
-        .eq("sender_id", activeChatUserId)
-        .eq("read", false);
-    };
-
-    markAsRead();
-  }, [messages, activeChatUserId, currentUser.id]);
+  // Mark as read handled by App when selecting a user
 
   /* SCROLL AUTOMÁTICO */
   useEffect(() => {
@@ -120,18 +75,9 @@ const ChatRoom: React.FC<ChatRoomProps> = ({
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() || !activeChatUserId) return;
-
-    const { error } = await supabase.from("messages").insert({
-      sender_id: currentUser.id,
-      receiver_id: activeChatUserId,
-      content: inputText.trim(),
-      read: false,
-    });
-
-    if (!error) {
-      setInputText("");
-      inputRef.current?.focus();
-    }
+    await onSendMessage(activeChatUserId, inputText.trim(), undefined);
+    setInputText("");
+    inputRef.current?.focus();
   };
 
   const otherUsers = useMemo(
@@ -187,7 +133,7 @@ const ChatRoom: React.FC<ChatRoomProps> = ({
         {/* MENSAGENS */}
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
           {messages.map((msg) => {
-            const isMine = msg.sender_id === currentUser.id;
+            const isMine = msg.senderId === currentUser.id;
 
             return (
               <div
@@ -201,10 +147,10 @@ const ChatRoom: React.FC<ChatRoomProps> = ({
                       : "bg-white dark:bg-slate-800"
                   }`}
                 >
-                  <p className="text-sm">{msg.content}</p>
+                  <p className="text-sm">{msg.text}</p>
 
                   <div className="text-[10px] opacity-70 mt-1">
-                    {new Date(msg.created_at).toLocaleTimeString("pt-BR", {
+                    {new Date(msg.timestamp).toLocaleTimeString("pt-BR", {
                       hour: "2-digit",
                       minute: "2-digit",
                     })}

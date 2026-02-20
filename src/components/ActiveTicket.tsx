@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Ticket, Machine, User } from '../types';
 import { getMaintenanceAdvice } from '../geminiService';
 import { formatSeconds } from '../utils';

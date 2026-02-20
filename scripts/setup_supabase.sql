@@ -7,13 +7,20 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT UNIQUE,
   nickname TEXT,
-  name TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'mecanico', -- 'admin', 'mecanico', 'gerente', 'user'
+  name TEXT NOT NULL, 
   avatar TEXT,
   status TEXT DEFAULT 'available', -- 'available', 'busy', 'offline'
   active BOOLEAN DEFAULT true,
+  job_role_id UUID REFERENCES public.job_roles(id) ON DELETE SET NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
+);
+
+-- 1.1 Tabela de Funções (Job Roles) - Garantir que existe antes do trigger
+CREATE TABLE IF NOT EXISTS public.job_roles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
 );
 
 -- 2. Enable Row Level Security (RLS)
@@ -30,17 +37,6 @@ CREATE POLICY "Users can update own profile"
   ON public.profiles
   FOR UPDATE
   USING (auth.uid() = id);
-
--- 5. RLS Policy: Admins podem ler todos os perfis
-CREATE POLICY "Admins can read all profiles"
-  ON public.profiles
-  FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.profiles
-      WHERE id = auth.uid() AND role = 'admin'
-    )
-  );
 
 -- 6. Criar função para atualizar updated_at automaticamente
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
@@ -83,6 +79,28 @@ VALUES (
   'available',
   true
 ) ON CONFLICT (id) DO NOTHING;
+
+-- 8. Trigger para criar perfil automaticamente ao cadastrar no Auth
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, name, nickname, job_role_id, role)
+  VALUES (
+    NEW.id, 
+    NEW.email, 
+    COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', ''),
+    NEW.raw_user_meta_data->>'nickname',
+    (NEW.raw_user_meta_data->>'job_role_id')::UUID,
+    'mecanico'
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- ============================================
 -- FIM DO SETUP

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ActivityLog } from '../types';
 import { supabase } from '../supabase';
 
@@ -26,16 +26,10 @@ const ActivityTimeline: React.FC<Props> = ({ limit = 100 }) => {
 
     const fetchLogs = async () => {
       try {
+        // Buscar logs básicos (sem join que pode falhar dependendo de RLS/relacionamentos)
         const { data, error } = await supabase
           .from('activity_logs')
-          .select(`
-            id,
-            timestamp,
-            action,
-            profiles (
-              name
-            )
-          `)
+          .select('id,timestamp,action,user_id')
           .order('timestamp', { ascending: false })
           .limit(limit);
 
@@ -46,11 +40,30 @@ const ActivityTimeline: React.FC<Props> = ({ limit = 100 }) => {
 
         if (!mounted) return;
 
-        const mapped: ActivityLog[] = (data || []).map((l: any) => ({
+        const rows: any[] = data || [];
+        const userIds = Array.from(new Set(rows.map(r => r.user_id).filter(Boolean)));
+
+        // Buscar perfis em batch para obter job_role_id
+        let profilesMap: Record<string, any> = {};
+        if (userIds.length > 0) {
+          const { data: profiles } = await supabase.from('profiles').select('id,name,job_role_id').in('id', userIds);
+          profilesMap = (profiles || []).reduce((acc: any, p: any) => ({ ...acc, [p.id]: p }), {});
+        }
+
+        // Buscar job roles para mapear nome
+        const jobRoleIds = Array.from(new Set(Object.values(profilesMap).map((p: any) => p.job_role_id).filter(Boolean)));
+        let jobRolesMap: Record<string, any> = {};
+        if (jobRoleIds.length > 0) {
+          const { data: jrs } = await supabase.from('job_roles').select('id,name').in('id', jobRoleIds);
+          jobRolesMap = (jrs || []).reduce((acc: any, j: any) => ({ ...acc, [j.id]: j }), {});
+        }
+
+        const mapped: ActivityLog[] = rows.map((l: any) => ({
           id: l.id,
           timestamp: l.timestamp,
-          userId: '',
-          userName: l.profiles?.name || 'Sistema',
+          userId: l.user_id || '',
+          userName: profilesMap[l.user_id]?.name || 'Sistema',
+          userRole: jobRolesMap[profilesMap[l.user_id]?.job_role_id]?.name || profilesMap[l.user_id]?.role || 'Usuário',
           action: l.action
         }));
 
@@ -74,19 +87,27 @@ const ActivityTimeline: React.FC<Props> = ({ limit = 100 }) => {
             const row = (payload as any).new;
             if (!row) return;
 
-            // Buscar nome do usuário após insert
+            // Buscar perfil do usuário e resolver job_role
             const { data: profile } = await supabase
               .from('profiles')
-              .select('name')
+              .select('name, job_role_id')
               .eq('id', row.user_id)
               .single();
+
+            let roleName = profile?.role;
+            if (profile?.job_role_id) {
+              const { data: jr } = await supabase.from('job_roles').select('name').eq('id', profile.job_role_id).single();
+              if (jr) roleName = jr.name;
+            }
 
             const incoming: ActivityLog = {
               id: row.id,
               timestamp: row.timestamp,
-              userId: '',
+              userId: row.user_id || '',
               userName: profile?.name || 'Sistema',
-              action: row.action
+              userRole: roleName || 'Usuário',
+              action: row.action,
+              details: row.details
             };
 
             setLogs(prev => {

@@ -42,7 +42,7 @@ export function buildChamadoLog(p: ChamadoLogParams): string {
  * Compatível com sua tabela atual:
  * id | timestamp | user_id | action
  */
-export async function logActivity(action: string) {
+export async function logActivity(action: string, p0: string) {
   try {
     if (!action) return;
 

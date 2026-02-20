@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Machine, SectorGroup, Warehouse, JobRole, User } from '../types';
 import { useTheme } from './ThemeContext';
 import defaultAvatar from '../assets/default-avatar.svg';

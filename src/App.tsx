@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { TicketStatus, AppState, UserRole, User, Ticket, ChatMessage, UserStatus, SectorGroup, JobRole, ActivityLog } from './types';
+import { TicketStatus, TicketPriority, AppState, UserRole, User, Ticket, ChatMessage, UserStatus, SectorGroup, JobRole, ActivityLog } from './types';
 import { supabase } from './supabase';
 import { logActivity, buildChamadoLog } from './utils/logActivity';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
@@ -22,12 +22,16 @@ import { useAuth } from './components/AuthContext';
 import defaultAvatar from './assets/default-avatar.svg';
 import Avatar from './components/Avatar';
 import { generateId } from './utils';
+import { checkIsAdmin } from './types';
 
 const App: React.FC = () => {
   const { user, loading: authLoading, signOut } = useAuth();
   const navigate = useNavigate();
 
-  const [state, setState] = useState<AppState & { ticketsInitialTab?: TicketStatus }>(() => ({
+  const [state, setState] = useState<AppState & {
+    ticketsInitialTab?: TicketStatus;
+    standardProblems: any[]
+  }>(() => ({
     currentUser: null,
     view: 'dashboard',
     tickets: [],
@@ -39,6 +43,7 @@ const App: React.FC = () => {
     jobRoles: [],
     activeTicketId: null,
     ticketsInitialTab: TicketStatus.OPEN,
+    standardProblems: [],
     messages: [],
     activeChatUserId: null,
     connectionStatus: 'online',
@@ -61,113 +66,166 @@ const App: React.FC = () => {
 
   // --- REALTIME SUBSCRIPTION (MESSAGES) ---
   const [session, setSession] = useState(null);
-const [loading, setLoading] = useState(true);
-
-useEffect(() => {
-  supabase.auth.getSession().then(({ data }) => {
-    setSession(data.session);
-    setLoading(false);
-    console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL);
-    console.log('Supabase Key (anon):', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.slice(0, 8) + '...');
-
-  });
-
-  const { data: listener } = supabase.auth.onAuthStateChange(
-    (_event, session) => {
-      setSession(session);
-    }
-  );
-
-  return () => {
-    listener.subscription.unsubscribe();
-  };
-}, []);
-
-// Realtime subscription for activity_logs to keep timeline in sync
-useEffect(() => {
-  const chan = supabase.channel('public:activity_logs')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_logs' }, (payload) => {
-      try {
-        const row = (payload as any).new || (payload as any).old;
-        if (!row) return;
-        const mapped: ActivityLog = {
-          id: row.id,
-          timestamp: row.timestamp || row.created_at || new Date().toISOString(),
-          userId: row.user_id || row.userId || row.user || '',
-          userName: row.user_name || row.userName || '',
-          userRole: (row.user_role as UserRole) || UserRole.MECANICO,
-          action: row.action,
-          details: row.details
-        };
-
-        setState(prev => {
-          if ((payload as any).eventType === 'DELETE' || (payload as any).type === 'DELETE') {
-            return { ...prev, activityLogs: prev.activityLogs.filter(l => l.id !== mapped.id) };
-          }
-          // For INSERT and UPDATE, replace existing or prepend
-          const filtered = prev.activityLogs.filter(l => l.id !== mapped.id);
-          return { ...prev, activityLogs: [mapped, ...filtered].slice(0, 200) };
-        });
-      } catch (err) {
-        console.error('Erro no realtime activity_logs handler:', err);
-      }
-    })
-    .subscribe();
-
-  return () => {
-    try {
-      supabase.removeChannel(chan);
-    } catch (e) {
-      // ignore
-    }
-  };
-}, []);
-
-
-  // --- SINCRONIZAÇÃO COM AUTH CONTEXT ---
+  const [loading, setLoading] = useState(true);
   const lastFetchedUserId = useRef<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setLoading(false);
+      console.log('Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
+      console.log('Supabase Key (anon):',
+        import.meta.env.VITE_SUPABASE_ANON_KEY?.slice(0, 8) + '...'
+      );
+
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setSession(session);
+      }
+    );
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  // Realtime subscription for activity_logs to keep timeline in sync
+  useEffect(() => {
+    function App() {
+
+      // 🔹 calcule antes do return
+      const isUserAdmin = checkIsAdmin(state.currentUser?.jobRoleId);
+
+      console.log("JobRoleId atual:", state.currentUser?.jobRoleId);
+      console.log("É admin?", isUserAdmin);
+
+      return (
+        <>
+          {state.view === 'activity_report' && (
+            isUserAdmin ? (
+              <ActivityReport />
+            ) : (
+              <div className="p-10 text-center text-slate-500">
+                Acesso negado. Apenas administradores podem ver este relatório.
+              </div>
+            )
+          )}
+        </>
+      );
+    }
+
+    const chan = supabase.channel('public:activity_logs')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_logs' }, (payload) => {
+        try {
+          const row = (payload as any).new || (payload as any).old;
+          if (!row) return;
+
+          setState(prev => {
+            // Resolve user display values using current state (users + jobRoles)
+            const uid = row.user_id || row.userId || row.user || '';
+            const userFromState = prev.users.find(u => u.id === uid);
+            const roleFromUser = userFromState?.role;
+            const roleFromJobRoles = userFromState?.jobRoleId ? prev.jobRoles.find(j => j.id === userFromState.jobRoleId)?.name : undefined;
+            const resolvedRole = roleFromUser || roleFromJobRoles || 'Mecânico';
+
+            const mapped: ActivityLog = {
+              id: row.id,
+              timestamp: row.timestamp || row.created_at || new Date().toISOString(),
+              userId: uid,
+              userName: userFromState?.name || row.user_name || row.userName || 'Sistema',
+              userRole: resolvedRole,
+              action: row.action
+            };
+
+            if ((payload as any).eventType === 'DELETE' || (payload as any).type === 'DELETE') {
+              return { ...prev, activityLogs: prev.activityLogs.filter(l => l.id !== mapped.id) };
+            }
+            const filtered = prev.activityLogs.filter(l => l.id !== mapped.id);
+            return { ...prev, activityLogs: [mapped, ...filtered].slice(0, 200) };
+          });
+        } catch (err) {
+          console.error('Erro no realtime activity_logs handler:', err);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      try {
+        supabase.removeChannel(chan);
+      } catch (e) {
+        // ignore
+      }
+    };
+  }, []);
 
   const fetchData = useCallback(async () => {
     try {
       setState(prev => ({ ...prev, connectionStatus: 'loading' }));
       console.log('🔄 Iniciando busca de dados no Supabase...');
 
-      // 1. Critical Data - Loads immediately for Dashboard interactions
       const [
         { data: tickets, error: ticketError },
         { data: users, error: userError },
-        { data: messages, error: messageError }
+        { data: messages, error: messageError },
+        { data: machines, error: machineError },
+        { data: logs, error: logError },
+        { data: warehouses, error: warehouseError },
+        { data: groups, error: groupError },
+        { data: jobRolesData, error: jobRoleError }
       ] = await Promise.all([
         supabase.from('tickets').select('*'),
         supabase.from('profiles').select('*'),
-        supabase.from('messages').select('*')
+        supabase.from('messages').select('*'),
+        supabase.from('machines').select('*'),
+        supabase.from('activity_logs').select('*').order('timestamp', { ascending: false }).limit(200),
+        supabase.from('warehouses').select('*'),
+        supabase.from('sector_groups').select('*'),
+        supabase.from('job_roles').select('*')
       ]);
 
-      if (ticketError) console.error('❌ Erro ao buscar tickets:', ticketError);
-      if (userError) console.error('❌ Erro ao buscar perfis:', userError);
-      if (messageError) console.error('❌ Erro ao buscar mensagens:', messageError);
-
-      console.log(`📊 Dados Principais: ${tickets?.length || 0} tickets, ${users?.length || 0} usuários, ${messages?.length || 0} mensagens`);
-
-      if (ticketError || userError || messageError) {
-        const errorMsg = [ticketError, userError, messageError].filter(Boolean).map(e => e!.message).join(', ');
-        showNotification(`Erro ao carregar dados: ${errorMsg}`, 'error');
+      if (ticketError || userError || messageError || jobRoleError) {
+        console.error('❌ Erro na busca:', { ticketError, userError, messageError, jobRoleError });
+        showNotification('Erro ao carregar dados do servidor', 'error');
       }
 
-      // map messages with robust field selection
-     const mappedMessages: ChatMessage[] = (messages || []).map((m: any) => ({
-      id: m.id,
-      senderId: m.sender_id,
-      receiverId: m.receiver_id,
-      text: m.content,
-      timestamp: m.created_at,
-      read: false, // você ainda não tem controle de leitura no banco
-      messageType: 'text'
-    }));
+      const mappedJobRoles: JobRole[] = (jobRolesData || []).map((r: any) => ({ id: r.id, name: r.name || r.role_name || r.title || '' }));
+
+      // --- MAPEAMENTO DE USUÁRIOS (PROFILES) ---
+      let mappedUsers: User[] = (users || []).map((u: any) => {
+        const jobRoleId = u.job_role_id ?? u.jobroleid ?? null;
+
+        const jobRole = mappedJobRoles.find(
+          r => r.id === jobRoleId
+        );
+
+        const roleName = jobRole?.name || 'Mecânico';
+
+        return {
+          id: u.id,
+          name: u.name || u.full_name || 'Usuário Sem Nome',
+          email: u.email,
+          role: roleName,
+          active: u.active !== undefined ? u.active : true,
+          avatar: u.avatar || u.avatar_url || defaultAvatar,
+          nickname: u.nickname || u.username,
+          status: (u.status as UserStatus) || UserStatus.AVAILABLE,
+          jobRoleId: jobRoleId // ← string UUID
+        };
+      });
 
 
+      // RLS diagnostic: ensure current user present in list
+      if (user && mappedUsers.length <= 1 && !mappedUsers.some(u => u.id === user.id)) {
+        const myJobRole = mappedJobRoles.find(r => r.id === user.jobRoleId)?.name;
+        mappedUsers.push({
+          ...(user as User),
+          role: myJobRole === 'Administrador do Sistema' ? 'Administrador do Sistema' : (myJobRole || 'Mecânico'),
+          name: user.name || 'Eu'
+        } as User);
+      }
 
-      // Map tickets from snake_case (DB) to camelCase (TS)
       const mappedTickets: Ticket[] = (tickets || []).map((t: any) => ({
         id: t.id,
         title: t.title,
@@ -177,93 +235,40 @@ useEffect(() => {
         manuseadoPor: t.manuseado_por || t.manuseadoPor,
         sector: t.sector,
         machineId: t.machine_id || t.machineId,
-        status: t.status,
-        priority: t.priority,
+        status: t.status as TicketStatus,
+        priority: t.priority as TicketPriority,
         description: t.description,
-        selectedProblems: t.selected_problems || t.selectedProblems,
-        customDescription: t.custom_description || t.customDescription,
-        machineCategory: t.machine_category || t.machineCategory,
-        operator: t.operator,
         createdAt: t.created_at || t.createdAt,
-        startedAt: t.started_at || t.startedAt,
-        completedAt: t.completed_at || t.completedAt,
         mecanicoId: t.mecanico_id || t.mecanicoId,
-        mechanicIds: t.mechanic_ids || t.mechanicIds,
         totalTimeSpent: t.total_time_spent || t.totalTimeSpent,
-        pausedByUserId: t.paused_by_user_id || t.pausedByUserId,
         notes: t.notes,
         createdBy: t.created_by || t.createdBy
       }));
 
-      // Map users (profiles) with robust field selection
-      let mappedUsers: User[] = (users || []).map((u: any) => ({
-        id: u.id,
-        name: u.name || u.full_name || 'Usuário Sem Nome',
-        email: u.email,
-        role: (u.role as UserRole) || UserRole.MECANICO,
-        active: u.active !== undefined ? u.active : true,
-        avatar: u.avatar || u.avatar_url || defaultAvatar,
-        nickname: u.nickname || u.username,
-        status: (u.status as UserStatus) || UserStatus.AVAILABLE,
-        jobRoleId: u.job_role_id || u.jobRoleId || u.jobroleid
-      }));
+      const mappedLogs: ActivityLog[] = (logs || []).map((l: any) => {
+        const logUser = mappedUsers.find(u => u.id === (l.user_id || l.userId));
+        const roleFromUser = logUser?.role;
+        const roleFromJob = logUser?.jobRoleId ? mappedJobRoles.find(j => j.id === logUser.jobRoleId)?.name : undefined;
+        const roleName = roleFromUser || roleFromJob || 'Mecânico';
+        return {
+          id: l.id,
+          timestamp: l.timestamp || l.created_at || '',
+          userId: l.user_id || l.userId || '',
+          userName: l.user_name || logUser?.name || 'Sistema',
+          userRole: roleName,
+          userAvatar: logUser?.avatar || defaultAvatar,
+          action: l.action,
+        };
+      });
 
-      // --- SEGURANÇA E DIAGNÓSTICO ---
-      // Se houver um usuário logado mas a lista de perfis estiver vazia ou contiver apenas ele mesmo
-      // isso é um forte indício de que o RLS está bloqueando a leitura de outros perfis.
-      if (user && mappedUsers.length <= 1) {
-        console.warn('⚠️ Atenção: Apenas um perfil carregado. Isso pode ser restrição de RLS no Supabase.');
-
-        // Garante que o usuário logado esteja pelo menos na lista se não foi retornado pelo profiles
-        if (!mappedUsers.some(u => u.id === user.id)) {
-          mappedUsers.push({
-            ...user,
-            role: user.role || UserRole.MECANICO,
-            name: user.name || 'Eu'
-          } as User);
-        }
-      }
-
-      // 2. Secondary Data - Loads in background
-      const [
-        { data: machines, error: machineError },
-        { data: logs, error: logError },
-        { data: warehouses, error: warehouseError },
-        { data: groups, error: groupError },
-        { data: jobRolesData, error: jobRoleError }
-      ] = await Promise.all([
-        supabase.from('machines').select('*'),
-        supabase.from('activity_logs').select('*').order('timestamp', { ascending: false }).limit(20),
-        supabase.from('warehouses').select('*'),
-        supabase.from('sector_groups').select('*'),
-        supabase.from('job_roles').select('*')
-      ]);
-
-      if (machineError) console.error('❌ Erro ao buscar máquinas:', machineError);
-      if (logError) console.error('❌ Erro ao buscar logs:', logError);
-      if (warehouseError) console.error('❌ Erro ao buscar galpões:', warehouseError);
-      if (groupError) console.error('❌ Erro ao buscar grupos:', groupError);
-      if (jobRoleError) console.error('❌ Erro ao buscar funções:', jobRoleError);
-
-      console.log(`📊 Dados Secundários: ${machines?.length || 0} máquinas, ${warehouses?.length || 0} galpões, ${groups?.length || 0} grupos, ${jobRolesData?.length || 0} funções`);
-
-      if (machineError || warehouseError || groupError || jobRoleError) {
-        showNotification('Erro ao carregar configurações (máquinas/galpões/grupos/funções).', 'error');
-      }
-
-      const mappedJobRoles: JobRole[] = (jobRolesData || []).map((r: any) => ({
-        id: r.id,
-        name: r.name || r.role_name || r.title || ''
-      }));
-
-      const mappedLogs: ActivityLog[] = (logs || []).map((l: any) => ({
-        id: l.id,
-        timestamp: l.timestamp || l.created_at || '',
-        userId: l.user_id || l.userId || l.user || '',
-        userName: l.user_name || l.userName || l.user_name || '',
-        userRole: (l.user_role as UserRole) || l.userRole || UserRole.MECANICO,
-        action: l.action,
-        details: l.details
+      const mappedMessages: ChatMessage[] = (messages || []).map((m: any) => ({
+        id: m.id,
+        senderId: m.sender_id,
+        receiverId: m.receiver_id,
+        text: m.content || m.text,
+        timestamp: m.created_at,
+        read: m.read || false,
+        messageType: 'text'
       }));
 
       const mappedGroups: SectorGroup[] = (groups || []).map((g: any) => mapSectorGroupFromDb(g));
@@ -289,17 +294,12 @@ useEffect(() => {
       }));
 
       console.log('✅ Sincronização com Supabase concluída');
-
     } catch (error: any) {
-      if (error?.name === 'AbortError' || error?.message?.includes('abort')) {
-        console.log('fetchData abortado (previsto)');
-        return;
-      }
-      console.error("❌ Erro fatal no fetchData:", error);
+      console.error('❌ Erro fatal no fetchData:', error);
       setState(prev => ({ ...prev, connectionStatus: 'error' }));
       showNotification(`Erro crítico de conexão: ${error?.message || 'Erro desconhecido'}`, 'error');
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -312,7 +312,7 @@ useEffect(() => {
           ...prev,
           currentUser: {
             ...user,
-            role: user.role || UserRole.MECANICO,
+            role: user.role || 'Mecânico',
             name: user.name || user.email?.split('@')[0] || 'Usuário'
           } as User
         }));
@@ -417,6 +417,7 @@ useEffect(() => {
   return (
     <Layout
       currentUser={state.currentUser as any}
+      activeView={state.view}
       view={state.view}
       onNavigate={navigateTo}
       onLogout={handleLogout}
@@ -458,73 +459,21 @@ useEffect(() => {
               await fetchData();
             }
           }}
-          onDeleteUser={async (id: string) => {
-  console.log("🗑 Tentando remover usuário ID:", id);
-
-  const previousUsers = state.users;
-
-  // 🔎 1. Verificar se existe no banco antes de deletar
-  const check = await supabase
-    .from('profiles')
-    .select('id, name, email')
-    .eq('id', id)
-    .maybeSingle();
-
-  console.log("🔍 Registro encontrado antes do delete:", check);
-
-  if (!check.data) {
-    console.warn("⚠️ Nenhum registro encontrado com esse ID no profiles.");
-    showNotification("Usuário não encontrado no banco.", "error");
-    return;
-  }
-
-  // 🚀 2. Optimistic UI
-  setState(prev => ({
-    ...prev,
-    users: prev.users.filter(u => u.id !== id)
-  }));
-
-  try {
-    const { error, status } = await supabase
-      .from('profiles')
-      .delete()
-      .eq('id', id);
-
-    console.log("📡 Status do delete:", status);
-
-    if (error) {
-      console.error("❌ Erro ao remover usuário:", error);
-
-      // 🔁 Reverte estado
-      setState(prev => ({
-        ...prev,
-        users: previousUsers
-      }));
-
-      showNotification(`Erro ao remover usuário: ${error.message}`, "error");
-      return;
-    }
-
-    console.log("✅ Usuário removido com sucesso no Supabase");
-
-    // 📝 Registrar activity log (não bloqueante)
-    await logActivity(`Removeu o usuário ${check.data.name} - Email: ${check.data.email}`);
-
-    showNotification("Usuário removido com sucesso!");
-    await fetchData();
-
-  } catch (err: any) {
-    console.error("💥 Exceção ao remover usuário:", err);
-
-    // 🔁 Reverte estado
-    setState(prev => ({
-      ...prev,
-      users: previousUsers
-    }));
-
-    showNotification(`Erro inesperado: ${err?.message || "Erro desconhecido"}`, "error");
-  }
-}}
+          onDelete={async (id: string) => {
+            try {
+              const { error } = await supabase.from('tickets').delete().eq('id', id);
+              if (error) {
+                console.error('Erro ao deletar chamado:', error);
+                showNotification('Erro ao deletar chamado', 'error');
+              } else {
+                showNotification('Chamado removido');
+                await fetchData();
+              }
+            } catch (err: any) {
+              console.error('Exceção ao deletar chamado:', err);
+              showNotification(`Erro ao deletar chamado: ${err?.message || 'Erro desconhecido'}`, 'error');
+            }
+          }}
 
           onNewTicket={() => setIsNewTicketModalOpen(true)}
           currentUser={state.currentUser as any}
@@ -539,7 +488,17 @@ useEffect(() => {
           tickets={state.tickets}
           onAddUser={async (userData) => {
             try {
-              const { error } = await supabase.from('profiles').insert([userData]);
+              const profilePayload = {
+                id: userData.id,
+                name: userData.name,
+                nickname: userData.nickname,
+                email: userData.email,
+                job_role_id: userData.jobRoleId,
+                avatar: userData.avatar,
+                active: userData.active,
+                role: userData.role
+              };
+              const { error } = await supabase.from('profiles').upsert([profilePayload]);
               if (error) throw error;
               showNotification('Usuário adicionado com sucesso!');
               await fetchData();
@@ -762,14 +721,6 @@ useEffect(() => {
         />
       )}
 
-      {state.view === 'activity_report' && (
-        state.currentUser?.role === UserRole.ADMIN ? (
-          <ActivityReport />
-        ) : (
-          <div className="p-10 text-center text-slate-500">Acesso negado. Apenas administradores podem ver este relatório.</div>
-        )
-      )}
-
       {state.view === 'admin_panel' && (
         <AdminPanel
           machines={state.machines}
@@ -801,10 +752,11 @@ useEffect(() => {
 
               for (const item of list) {
                 if (item.id.startsWith('temp-')) {
-                  const { id, ...rest } = item;
+                  const { id: tempId, ...rest } = item;
+                  const newItem = { ...rest, id: generateId() };
                   const { error } = await supabase
                     .from('machines')
-                    .insert([mapMachineToDb(rest)]);
+                    .insert([mapMachineToDb(newItem)]);
 
                   if (error) {
                     console.error('Erro ao inserir máquina:', error);
@@ -853,8 +805,9 @@ useEffect(() => {
 
               for (const item of list) {
                 if (item.id.startsWith('temp-')) {
-                  const { id, ...rest } = item;
-                  const { error } = await supabase.from('sector_groups').insert([mapSectorGroupToDb(rest)]);
+                  const { id: tempId, ...rest } = item;
+                  const newItem = { ...rest, id: generateId() };
+                  const { error } = await supabase.from('sector_groups').insert([mapSectorGroupToDb(newItem)]);
                   if (error) {
                     console.error('Erro ao inserir grupo:', error);
                     showNotification(`Erro ao inserir grupo: ${error.message}`, 'error');
@@ -964,7 +917,17 @@ useEffect(() => {
           }}
           onAddUser={async (userData) => {
             try {
-              const { error } = await supabase.from('profiles').insert([userData]);
+              const profilePayload = {
+                id: userData.id,
+                name: userData.name,
+                nickname: userData.nickname,
+                email: userData.email,
+                job_role_id: userData.jobRoleId,
+                avatar: userData.avatar,
+                active: userData.active,
+                role: userData.role
+              };
+              const { error } = await supabase.from('profiles').upsert([profilePayload]);
               if (error) {
                 console.error('Erro ao adicionar usuário:', error);
                 showNotification(`Erro ao adicionar usuário: ${error.message}`, 'error');
@@ -978,7 +941,16 @@ useEffect(() => {
             }
           }}
           onEditUser={async (userData) => {
-            const { error } = await supabase.from('profiles').update(userData).eq('id', userData.id);
+            const profilePayload = {
+              name: userData.name,
+              nickname: userData.nickname,
+              email: userData.email,
+              job_role_id: userData.jobRoleId,
+              avatar: userData.avatar,
+              active: userData.active,
+              role: userData.role
+            };
+            const { error } = await supabase.from('profiles').update(profilePayload).eq('id', userData.id);
             if (error) {
               showNotification('Erro ao atualizar usuário', 'error');
             } else {
@@ -987,51 +959,52 @@ useEffect(() => {
             }
           }}
           onDeleteUser={async (id) => {
-  const previousUsers = state.users;
+            const previousUsers = state.users;
 
-  // Optimistic UI
-  setState(prev => ({
-    ...prev,
-    users: prev.users.filter(u => u.id !== id)
-  }));
+            // Optimistic UI
+            setState(prev => ({
+              ...prev,
+              users: prev.users.filter(u => u.id !== id)
+            }));
 
-  try {
-    // 1️⃣ Desvincular tickets do usuário
-    const { error: ticketError } = await supabase
-      .from('tickets')
-      .update({ mecanico_id: null })
-      .eq('mecanico_id', id);
+            try {
+              // 1️⃣ Desvincular tickets do usuário
+              const { error: ticketError } = await supabase
+                .from('tickets')
+                .update({ mecanico_id: null })
+                .eq('mecanico_id', id);
 
-    if (ticketError) throw ticketError;
+              if (ticketError) throw ticketError;
 
-    // 2️⃣ Agora excluir o perfil
-    const response = await supabase
-      .from('profiles')
-      .delete()
-      .eq('id', id)
-      .select();
+              // 2️⃣ Agora excluir o perfil
+              const response = await supabase
+                .from('profiles')
+                .delete()
+                .eq('id', id)
+                .select();
 
-    console.log('Delete response raw:', response);
+              const { data, error, status } = response as any;
+              console.log("STATUS:", status);
+              console.log("ERROR:", error);
+              console.log("DATA:", data);
 
-    const { data, error, status } = response as any;
+              if (error) throw error;
 
-    if (error) throw error;
+              console.log('Usuário removido no Supabase:', data);
+              showNotification('Usuário removido com sucesso');
+              await fetchData();
 
-    console.log('Usuário removido no Supabase:', data);
-    showNotification('Usuário removido com sucesso');
-    await fetchData();
+            } catch (err: any) {
+              // Reverter se algo der errado
+              setState(prev => ({ ...prev, users: previousUsers }));
 
-  } catch (err: any) {
-    // Reverter se algo der errado
-    setState(prev => ({ ...prev, users: previousUsers }));
-
-    console.error('Erro ao remover usuário:', err);
-    showNotification(
-      `Erro ao remover usuário: ${err?.message || 'Erro desconhecido'}`,
-      'error'
-    );
-  }
-}}
+              console.error('Erro ao remover usuário:', err);
+              showNotification(
+                `Erro ao remover usuário: ${err?.message || 'Erro desconhecido'}`,
+                'error'
+              );
+            }
+          }}
 
           onBack={() => navigateTo('dashboard')}
         />

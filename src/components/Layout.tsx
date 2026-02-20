@@ -1,13 +1,14 @@
 import React, { ReactNode } from 'react';
-import { useAuth } from './AuthContext';
 import { useTheme } from './ThemeContext';
 import defaultAvatar from '../assets/default-avatar.svg';
 import Avatar from './Avatar';
-import { TicketStatus, UserRole } from '../types';
+import { TicketStatus, User } from '../types'; // Importe User em vez de UserRole
 
 interface LayoutProps {
     children: ReactNode;
     activeView: string;
+    view: string;
+    currentUser: User | null; // Adicionado para resolver o erro no App.tsx
     onNavigate: (view: any, initialTab?: TicketStatus) => void;
     openTicketsCount: number;
     unreadMessagesCount: number;
@@ -15,19 +16,31 @@ interface LayoutProps {
     onNewTicket: () => void;
 }
 
-const Layout: React.FC<LayoutProps> = ({
+export const Layout: React.FC<LayoutProps> = ({
     children,
     activeView,
+    currentUser, // Recebendo via props conforme o App.tsx envia
     onNavigate,
+    view,
     openTicketsCount,
     unreadMessagesCount,
     onLogout,
     onNewTicket
+    
 }) => {
-    const { user } = useAuth();
     const { theme, toggleTheme } = useTheme();
 
-    if (!user) return <>{children}</>;
+    // FLAG TEMPORÁRIA: quando true, exibe todas as opções do sistema a todos os usuários.
+    // Use apenas enquanto estiver fazendo cadastros/ajustes; depois volte para 'false'.
+    const FORCE_SHOW_ALL_OPTIONS = true;
+
+    // Helper para verificar se é Admin baseado no NOME do cargo (dinâmico)
+    const isAdmin = FORCE_SHOW_ALL_OPTIONS || (
+        currentUser?.role === "Administrador do Sistema" || 
+        currentUser?.role?.toLowerCase().includes('admin')
+    );
+
+    if (!currentUser) return <>{children}</>;
 
     return (
         <div className="min-h-screen flex flex-col md:flex-row relative overflow-x-hidden bg-background-light dark:bg-background-dark">
@@ -87,7 +100,8 @@ const Layout: React.FC<LayoutProps> = ({
                         <span className="font-semibold text-sm">Equipe Técnica</span>
                     </button>
 
-                    {user.role === UserRole.ADMIN && (
+                    {/* Verificação Dinâmica de Admin */}
+                    {isAdmin && (
                         <button
                             onClick={() => onNavigate('activity_report')}
                             className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-300 group ${activeView === 'activity_report' ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800/50'}`}
@@ -112,7 +126,8 @@ const Layout: React.FC<LayoutProps> = ({
                         )}
                     </button>
 
-                    {user.role === UserRole.ADMIN && (
+                    {/* Verificação Dinâmica de Admin */}
+                    {isAdmin && (
                         <button
                             onClick={() => onNavigate('admin_panel')}
                             className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-300 group ${activeView === 'admin_panel' ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800/50'}`}
@@ -125,19 +140,17 @@ const Layout: React.FC<LayoutProps> = ({
 
                 <div className="p-4 mx-4 mb-6 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-700/50">
                     <div className="flex items-center gap-3 p-1 mb-3">
-                            <div className="relative">
-                                    <Avatar src={user.avatar || null} name={user.name} className="size-11 rounded-xl bg-cover bg-center ring-2 ring-white dark:ring-slate-700 shadow-sm" />
+                        <div className="relative">
+                            <Avatar src={currentUser.avatar || null} name={currentUser.name} className="size-11 rounded-xl bg-cover bg-center ring-2 ring-white dark:ring-slate-700 shadow-sm" />
                             <div className="absolute -bottom-1 -right-1 size-3.5 bg-success border-2 border-white dark:border-slate-800 rounded-full"></div>
                         </div>
                         <div className="flex-1 min-w-0">
-                            <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{user.name}</p>
-                            <p className="text-[9px] text-slate-400 uppercase font-black tracking-widest leading-none mt-0.5">{user.role}</p>
+                            <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{currentUser.name}</p>
+                            <p className="text-[9px] text-slate-400 uppercase font-black tracking-widest leading-none mt-0.5">{currentUser.role}</p>
                         </div>
-                        {/* Toggle Theme Mini Button */}
                         <button
                             onClick={toggleTheme}
                             className="size-8 flex items-center justify-center rounded-xl bg-white dark:bg-slate-800 text-slate-400 hover:text-primary shadow-sm active:scale-95 transition-all"
-                            title="Alternar Tema"
                         >
                             <span className="material-symbols-outlined text-[18px]">{theme === 'dark' ? 'light_mode' : 'dark_mode'}</span>
                         </button>
@@ -157,15 +170,7 @@ const Layout: React.FC<LayoutProps> = ({
                 {children}
             </main>
 
-            {/* Mobile Actions FAB */}
-            <button
-                onClick={onNewTicket}
-                className="md:hidden fixed bottom-24 right-6 size-14 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl shadow-2xl flex items-center justify-center z-40 active:scale-90 transition-all border border-white/20"
-            >
-                <span className="material-symbols-outlined text-2xl">add</span>
-            </button>
-
-            {/* Mobile Bottom Navigation */}
+            {/* Mobile Bottom Navigation (Ajustada para os novos cargos) */}
             <nav className="md:hidden fixed bottom-6 left-6 right-6 h-18 bg-white/80 dark:bg-slate-900/80 ios-blur border border-white/20 dark:border-slate-700/30 rounded-3xl flex items-center justify-around px-2 shadow-premium z-40">
                 <button onClick={() => onNavigate('dashboard')} className={`flex flex-col items-center justify-center size-14 rounded-2xl transition-all ${activeView === 'dashboard' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-slate-400'}`}>
                     <span className={`material-symbols-outlined ${activeView === 'dashboard' ? 'filled' : ''}`}>dashboard</span>
@@ -173,37 +178,22 @@ const Layout: React.FC<LayoutProps> = ({
                 </button>
                 <button onClick={() => onNavigate('tickets', TicketStatus.OPEN)} className={`flex flex-col items-center justify-center size-14 rounded-2xl relative transition-all ${activeView === 'tickets' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-slate-400'}`}>
                     <span className={`material-symbols-outlined ${activeView === 'tickets' ? 'filled' : ''}`}>assignment</span>
-                    {openTicketsCount > 0 && <div className="absolute top-1.5 right-1.5 bg-danger text-white text-[9px] font-bold size-4.5 rounded-full flex items-center justify-center ring-2 ring-white dark:ring-slate-900">{openTicketsCount}</div>}
                     <span className="text-[9px] font-bold mt-0.5">Ordens</span>
-                </button>
-                <button onClick={() => onNavigate('users')} className={`flex flex-col items-center justify-center size-14 rounded-2xl transition-all ${activeView === 'users' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-slate-400'}`}>
-                    <span className={`material-symbols-outlined ${activeView === 'users' ? 'filled' : ''}`}>group</span>
-                    <span className="text-[9px] font-bold mt-0.5">Equipe</span>
                 </button>
                 <button onClick={() => onNavigate('chat')} className={`flex flex-col items-center justify-center size-14 rounded-2xl relative transition-all ${activeView === 'chat' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-slate-400'}`}>
                     <span className={`material-symbols-outlined ${activeView === 'chat' ? 'filled' : ''}`}>forum</span>
-                    {unreadMessagesCount > 0 && <div className="absolute top-1.5 right-1.5 bg-danger text-white text-[9px] font-bold size-4.5 rounded-full flex items-center justify-center ring-2 ring-white dark:ring-slate-900 animate-pulse">{unreadMessagesCount}</div>}
                     <span className="text-[9px] font-bold mt-0.5">Chat</span>
                 </button>
-                {user.role === UserRole.ADMIN && (
-                    <>
-                        <button onClick={() => onNavigate('activity_report')} className={`flex flex-col items-center justify-center size-14 rounded-2xl transition-all ${activeView === 'activity_report' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-slate-400'}`}>
-                            <span className={`material-symbols-outlined ${activeView === 'activity_report' ? 'filled' : ''}`}>timeline</span>
-                            <span className="text-[9px] font-bold mt-0.5">Relatório</span>
-                        </button>
-                        <button onClick={() => onNavigate('admin_panel')} className={`flex flex-col items-center justify-center size-14 rounded-2xl transition-all ${activeView === 'admin_panel' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-slate-400'}`}>
-                            <span className={`material-symbols-outlined ${activeView === 'admin_panel' ? 'filled' : ''}`}>settings</span>
-                            <span className="text-[9px] font-bold mt-0.5">Config</span>
-                        </button>
-                    </>
+                {isAdmin && (
+                    <button onClick={() => onNavigate('admin_panel')} className={`flex flex-col items-center justify-center size-14 rounded-2xl transition-all ${activeView === 'admin_panel' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-slate-400'}`}>
+                        <span className={`material-symbols-outlined ${activeView === 'admin_panel' ? 'filled' : ''}`}>settings</span>
+                        <span className="text-[9px] font-bold mt-0.5">Config</span>
+                    </button>
                 )}
-                <button onClick={onLogout} className="flex flex-col items-center justify-center size-14 rounded-2xl text-slate-400">
-                    <span className="material-symbols-outlined">logout</span>
-                    <span className="text-[9px] font-bold mt-0.5">Sair</span>
-                </button>
             </nav>
         </div>
     );
 };
+
 
 export default Layout;

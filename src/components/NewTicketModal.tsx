@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Machine, Ticket, User, TicketPriority, Warehouse, SectorGroup } from '../types';
 
 interface NewTicketModalProps {
@@ -9,6 +9,7 @@ interface NewTicketModalProps {
   warehouses: Warehouse[];
   groups: SectorGroup[];
   currentUser: User | null;
+  standardProblems?: any[];
 }
 
 const NewTicketModal: React.FC<NewTicketModalProps> = ({

@@ -114,16 +114,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             if (!data) return;
 
+            // Buscar o nome do cargo a partir de job_role_id (preferível ao campo role direto)
+            let resolvedRoleName: string | undefined = undefined;
+            const jobRoleId = data.job_role_id || data.jobroleid;
+            if (jobRoleId) {
+                try {
+                    const { data: jr } = await supabase.from('job_roles').select('id,name').eq('id', jobRoleId).single();
+                    if (jr && jr.name) resolvedRoleName = jr.name;
+                } catch (e) {
+                    // ignore and fallback
+                }
+            }
+
             // Atualiza com os dados reais do banco
             setUser({
                 id: data.id,
                 name: data.name || currentSession.user.email?.split('@')[0] || '',
                 email: currentSession.user.email || data.email || '',
-                role: (data.role as UserRole) || UserRole.MECANICO,
+                role: resolvedRoleName || (data.role as UserRole) || UserRole.MECANICO,
                 active: !!data.active,
                 avatar: data.avatar || '',
                 nickname: data.nickname || '',
-                status: (data.status as UserStatus) || UserStatus.AVAILABLE
+                status: (data.status as UserStatus) || UserStatus.AVAILABLE,
+                jobRoleId: jobRoleId
             });
 
             console.log('✅ Perfil atualizado em segundo plano');

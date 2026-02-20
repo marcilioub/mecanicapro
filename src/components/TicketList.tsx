@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Ticket, TicketStatus, User, UserRole, TicketPriority } from '../types';
 import { useTheme } from './ThemeContext';
 import { formatDuration } from '../utils';

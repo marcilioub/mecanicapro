@@ -1,6 +1,6 @@
 
-import React, { useState, useMemo } from 'react';
-import { User, Ticket, TicketStatus, UserStatus } from '../types';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { User, Ticket, TicketStatus, UserStatus, UserRole, checkIsAdmin } from '../types';
 import NewUserModal from './NewUserModal';
 import Avatar from './Avatar';
 
@@ -123,8 +123,8 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUser, users, tic
 
                     <div className="flex items-center justify-between mt-3">
                       <div className="flex items-center gap-2">
-                        <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-tighter ${user.role === 'admin' ? 'bg-primary/10 text-primary border border-primary/20' :
-                            user.role === 'supervisor' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
+                        <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-tighter ${checkIsAdmin(user.role) ? 'bg-primary/10 text-primary border border-primary/20' :
+                            user.role === UserRole.SUPERVISOR ? 'bg-amber-100 text-amber-700 border border-amber-200' :
                               'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 border border-gray-200 dark:border-slate-600'
                           }`}>
                           {user.role}

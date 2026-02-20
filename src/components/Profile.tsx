@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { User } from '../types';
 import { useTheme } from './ThemeContext';
 import defaultAvatar from '../assets/default-avatar.svg';

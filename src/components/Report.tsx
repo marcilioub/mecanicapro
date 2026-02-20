@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Ticket, TicketStatus, User, UserRole } from '../types';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Ticket, TicketStatus, User, UserRole, checkIsAdmin } from '../types';
 import { useTheme } from './ThemeContext';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -27,7 +27,7 @@ const Report: React.FC<ReportProps> = ({
   const [startDate, setStartDate] = useState(initialStartDate || '');
   const [endDate, setEndDate] = useState(initialEndDate || '');
 
-  const isAdminOrSupervisor = currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.SUPERVISOR;
+  const isAdminOrSupervisor = checkIsAdmin(currentUser.role) || currentUser.role === UserRole.SUPERVISOR;
 
   // Filter Mechanics from Users
   const mechanics = useMemo(() => {

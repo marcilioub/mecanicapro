@@ -51,3 +51,13 @@ export const formatDuration = (totalSeconds: number): string => {
     parts.push(`${s}s`);
     return parts.join(' ');
 };
+
+import { User, checkIsAdmin } from './types';
+
+/**
+ * Verifica se um usuário tem privilégios de administrador. * 
+ */
+export const isAdmin = (user?: User | null): boolean => {
+    if (!user) return false;
+    return checkIsAdmin(user.jobRoleId);
+};
