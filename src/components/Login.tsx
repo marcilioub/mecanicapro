@@ -21,14 +21,30 @@ const Login: React.FC = () => {
     console.log('🔐 Iniciando processo de login...');
 
     try {
-      if (!username.includes('@')) {
-        throw new Error('Por favor, insira seu e-mail completo.');
+      let emailToAuth = username.trim();
+
+      if (!emailToAuth.includes('@')) {
+        console.log('🔍 Nickname detectado, buscando e-mail correspondente:', emailToAuth);
+
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('email')
+          .ilike('nickname', emailToAuth)
+          .single();
+
+        if (profileError || !profileData?.email) {
+          console.error('❌ Usuário não encontrado pelo nickname:', profileError);
+          throw new Error('Usuário não encontrado.');
+        }
+
+        emailToAuth = profileData.email;
+        console.log('📧 E-mail resolvido para o nickname:', emailToAuth);
       }
 
-      console.log('📧 Autenticando com:', username);
+      console.log('📧 Autenticando com:', emailToAuth);
 
       const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email: username.trim(),
+        email: emailToAuth,
         password: password,
       });
 
@@ -75,7 +91,7 @@ const Login: React.FC = () => {
         <div className="text-center mb-10">
           <h1 className="text-slate-900 dark:text-white text-2xl font-black font-display tracking-tight uppercase leading-none">Autenticação</h1>
           <p className="text-[10px] text-primary font-black uppercase tracking-widest mt-2 opacity-60">
-            {loading ? 'Verificando Credenciais...' : 'Entre com seu e-mail operacional'}
+            {loading ? 'Verificando Credenciais...' : 'Entre com seu e-mail ou nickname'}
           </p>
         </div>
 
@@ -87,14 +103,14 @@ const Login: React.FC = () => {
 
         <form className="space-y-6" onSubmit={handleSubmit}>
           <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">E-mail do Técnico</label>
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">E-mail ou Nickname</label>
             <div className="relative group">
               <span className="material-symbols-outlined absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-primary transition-colors text-2xl">mail</span>
               <input
                 disabled={loading}
                 className="w-full rounded-2xl text-slate-900 dark:text-white focus:outline-0 focus:ring-4 focus:ring-primary/10 border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-800/50 h-16 pl-14 pr-6 text-sm font-bold transition-all disabled:opacity-50"
-                placeholder="tecnico@empresa.com"
-                type="email"
+                placeholder="email@exemplo.com ou nickname"
+                type="text"
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}

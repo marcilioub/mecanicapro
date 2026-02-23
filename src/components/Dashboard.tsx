@@ -73,6 +73,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     (t?.mecanicoId === user?.id || t?.mechanicIds?.includes(user?.id))
   );
 
+  const userNickname = user?.nickname || user?.name || 'Técnico';
   const displayName = user?.nickname || user?.name?.split(' ')[0] || 'Técnico';
 
   const getStatusConfig = (status: UserStatus) => {
@@ -107,7 +108,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             <div className={`absolute -bottom-1 -right-1 size-4 rounded-full border-2 border-white dark:border-slate-800 ${statusConfig.color}`}></div>
           </div>
           <div className="hidden md:block">
-            <p className="text-sm font-extrabold text-slate-900 dark:text-white leading-tight">{user?.name}</p>
+            <p className="text-sm font-extrabold text-slate-900 dark:text-white leading-tight">{userNickname}</p>
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{user?.role}</p>
           </div>
         </div>
@@ -139,7 +140,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 if (hour < 12) return 'Bom dia';
                 if (hour < 18) return 'Boa tarde';
                 return 'Boa noite';
-              })()}, {displayName} 🛠️
+              })()}, {userNickname} 🛠️
             </h1>
           </div>
           <div className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-white text-[11px] font-black uppercase tracking-wider shadow-lg ${statusConfig.color}`}>

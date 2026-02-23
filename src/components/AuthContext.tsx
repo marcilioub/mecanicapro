@@ -88,8 +88,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             name: currentSession.user.email?.split('@')[0] || 'Usuário',
             email: currentSession.user.email || '',
             role: UserRole.MECANICO, // Role padrão temporária
+            nickname: currentSession.user.email?.split('@')[0] || '', // Fallback para nickname inicial
             active: true,
-            status: UserStatus.AVAILABLE
+            status: UserStatus.AVAILABLE,
+            jobRoleId: null
         });
         setLoading(false); // <--- A MÁGICA: A tela carrega instantaneamente aqui
 
@@ -130,11 +132,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUser({
                 id: data.id,
                 name: data.name || currentSession.user.email?.split('@')[0] || '',
-                email: currentSession.user.email || data.email || '',
+                email: data.email || currentSession.user.email || '',
                 role: resolvedRoleName || (data.role as UserRole) || UserRole.MECANICO,
                 active: !!data.active,
                 avatar: data.avatar || '',
-                nickname: data.nickname || '',
+                nickname: data.nickname || data.name || '',
                 status: (data.status as UserStatus) || UserStatus.AVAILABLE,
                 jobRoleId: jobRoleId
             });

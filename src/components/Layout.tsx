@@ -26,7 +26,7 @@ export const Layout: React.FC<LayoutProps> = ({
     unreadMessagesCount,
     onLogout,
     onNewTicket
-    
+
 }) => {
     const { theme, toggleTheme } = useTheme();
 
@@ -36,7 +36,7 @@ export const Layout: React.FC<LayoutProps> = ({
 
     // Helper para verificar se é Admin baseado no NOME do cargo (dinâmico)
     const isAdmin = FORCE_SHOW_ALL_OPTIONS || (
-        currentUser?.role === "Administrador do Sistema" || 
+        currentUser?.role === "Administrador do Sistema" ||
         currentUser?.role?.toLowerCase().includes('admin')
     );
 
@@ -140,12 +140,16 @@ export const Layout: React.FC<LayoutProps> = ({
 
                 <div className="p-4 mx-4 mb-6 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-700/50">
                     <div className="flex items-center gap-3 p-1 mb-3">
-                        <div className="relative">
+                        <div
+                            className="relative cursor-pointer hover:scale-105 transition-transform"
+                            onClick={() => onNavigate('profile')}
+                            title="Ver meu perfil"
+                        >
                             <Avatar src={currentUser.avatar || null} name={currentUser.name} className="size-11 rounded-xl bg-cover bg-center ring-2 ring-white dark:ring-slate-700 shadow-sm" />
                             <div className="absolute -bottom-1 -right-1 size-3.5 bg-success border-2 border-white dark:border-slate-800 rounded-full"></div>
                         </div>
                         <div className="flex-1 min-w-0">
-                            <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{currentUser.name}</p>
+                            <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{currentUser.nickname || currentUser.name}</p>
                             <p className="text-[9px] text-slate-400 uppercase font-black tracking-widest leading-none mt-0.5">{currentUser.role}</p>
                         </div>
                         <button

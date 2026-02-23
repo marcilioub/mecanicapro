@@ -15,15 +15,25 @@ interface ProfileProps {
 
 const Profile: React.FC<ProfileProps> = ({ user, onBack, onLogout, onUpdateUser }) => {
   const { theme, toggleTheme } = useTheme();
+  const [name, setName] = useState(user.name || '');
   const [nickname, setNickname] = useState(user.nickname || '');
   const [email, setEmail] = useState(user.email || '');
   const [avatar, setAvatar] = useState<string | null>(user.avatar || null);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<boolean>(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sincronizar estado interno se o prop user mudar (após salvamento)
+  useEffect(() => {
+    setName(user.name || '');
+    setNickname(user.nickname || '');
+    setEmail(user.email || '');
+    setAvatar(user.avatar || null);
+  }, [user]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -38,15 +48,25 @@ const Profile: React.FC<ProfileProps> = ({ user, onBack, onLogout, onUpdateUser 
         setError(null);
 
         // Upload to Supabase Storage
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${user.id}-${Math.random()}.${fileExt}`;
+        const fileExt = file.name.split('.').pop() || 'jpg';
+        const fileName = `${user.id}-${Date.now()}.${fileExt}`;
         const filePath = `avatars/${fileName}`;
 
-        const { error: uploadError } = await supabase.storage
-          .from('mecanicapro')
-          .upload(filePath, file);
+        console.log('📤 Tentando upload:', { bucket: 'mecanicapro', filePath, type: file.type });
 
-        if (uploadError) throw uploadError;
+        const { error: uploadError, data: uploadData } = await supabase.storage
+          .from('mecanicapro')
+          .upload(filePath, file, {
+            upsert: true,
+            contentType: file.type
+          });
+
+        if (uploadError) {
+          console.error('❌ Erro Supabase Storage:', uploadError);
+          throw new Error(uploadError.message || 'Erro no upload');
+        }
+
+        console.log('✅ Upload concluído:', uploadData);
 
         const { data: { publicUrl } } = supabase.storage
           .from('mecanicapro')
@@ -77,22 +97,47 @@ const Profile: React.FC<ProfileProps> = ({ user, onBack, onLogout, onUpdateUser 
     e.preventDefault();
     setError(null);
     setSuccess(false);
+    setLoading(true);
 
-    // Validação conforme solicitado pelo usuário
+    // Validação de senha
     if (newPassword && newPassword !== confirmPassword) {
       setError("O campo 'Repetir Nova Senha' está divergente da 'Nova Senha'. Por favor, corrija.");
+      setLoading(false);
       return;
     }
 
     try {
-      const updates: any = {
-        nickname: nickname.trim(),
-        email: email.trim() || null
+      // 1. Atualizar Supabase Auth (Metadata e Credenciais)
+      // Sincronizar os metadados do Auth com a tabela profiles para consistência
+      const authUpdates: any = {
+        data: {
+          full_name: name.trim(),
+          nickname: nickname.trim(),
+          avatar_url: avatar
+        }
       };
 
-      if (newPassword) {
-        updates.password = newPassword;
+      if (email !== user.email && email.trim() !== '') {
+        authUpdates.email = email.trim();
       }
+      if (newPassword) {
+        authUpdates.password = newPassword;
+      }
+
+      console.log('🔄 Sincronizando metadados do Auth...');
+      const { error: authError } = await supabase.auth.updateUser(authUpdates);
+      if (authError) throw authError;
+
+      if (authUpdates.email) {
+        setError("Atenção: Um e-mail de confirmação foi enviado para o novo endereço. O e-mail só será alterado após a confirmação.");
+      }
+
+      // 2. Atualizar perfil na tabela 'profiles'
+      const updates: any = {
+        name: name.trim(),
+        nickname: nickname.trim(),
+        email: email.trim() // Sincroniza o e-mail na tabela também
+      };
 
       const { error: updateError } = await supabase
         .from('profiles')
@@ -103,12 +148,13 @@ const Profile: React.FC<ProfileProps> = ({ user, onBack, onLogout, onUpdateUser 
 
       onUpdateUser();
       setSuccess(true);
-      // Informe que deu tudo certo e que foi salvo (limpando campos de senha após sucesso)
       setNewPassword('');
       setConfirmPassword('');
       setTimeout(() => setSuccess(false), 4000);
     } catch (err: any) {
       setError(`Erro ao salvar: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -149,12 +195,18 @@ const Profile: React.FC<ProfileProps> = ({ user, onBack, onLogout, onUpdateUser 
               <div
                 className="size-40 rounded-[2.5rem] bg-slate-50 dark:bg-slate-800 border-4 border-white dark:border-slate-900 shadow-2xl overflow-hidden group-hover:scale-105 transition-transform duration-500"
               >
-                <Avatar src={avatar || null} name={user.name} className="w-full h-full size-full bg-cover bg-center" />
+                <Avatar src={avatar || null} name={user.nickname || user.name} className="w-full h-full size-full bg-cover bg-center" />
+                {uploading && (
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-white text-3xl animate-spin">sync</span>
+                  </div>
+                )}
               </div>
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="absolute -bottom-3 -right-3 size-12 bg-primary text-white rounded-2xl shadow-xl shadow-primary/30 cursor-pointer hover:scale-110 active:scale-90 transition-all flex items-center justify-center z-20 border-4 border-white dark:border-slate-900"
+                disabled={uploading}
+                className="absolute -bottom-3 -right-3 size-12 bg-primary text-white rounded-2xl shadow-xl shadow-primary/30 cursor-pointer hover:scale-110 active:scale-90 transition-all flex items-center justify-center z-20 border-4 border-white dark:border-slate-900 disabled:opacity-50"
               >
                 <span className="material-symbols-outlined text-xl">edit_square</span>
               </button>
@@ -167,7 +219,7 @@ const Profile: React.FC<ProfileProps> = ({ user, onBack, onLogout, onUpdateUser 
               />
             </div>
             <div className="mt-8 text-center px-6">
-              <h3 className="text-xl font-black font-display text-slate-900 dark:text-white">{user.name}</h3>
+              <h3 className="text-xl font-black font-display text-slate-900 dark:text-white">{user.nickname || user.name}</h3>
               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1">{user.role}</p>
             </div>
             <p className="mt-6 text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-full border border-slate-100 dark:border-slate-800">Selecione uma imagem de até 2MB</p>
@@ -186,12 +238,12 @@ const Profile: React.FC<ProfileProps> = ({ user, onBack, onLogout, onUpdateUser 
           )}
 
           {error && (
-            <div className="p-5 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-800/50 rounded-3xl flex items-center gap-4 text-red-800 dark:text-red-400 animate-in shake duration-300 shadow-xl shadow-red-500/5">
-              <div className="bg-danger size-10 rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-danger/20">
-                <span className="material-symbols-outlined text-white text-xl">error_outline</span>
+            <div className={`p-5 ${error.includes('confirmação') ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-100 dark:border-amber-800/50' : 'bg-red-50 dark:bg-red-900/10 border-red-100 dark:border-red-800/50'} rounded-3xl flex items-center gap-4 text-slate-800 dark:text-slate-200 animate-in shake duration-300 shadow-xl shadow-black/5`}>
+              <div className={`${error.includes('confirmação') ? 'bg-amber-500' : 'bg-danger'} size-10 rounded-2xl flex items-center justify-center shrink-0 shadow-lg`}>
+                <span className="material-symbols-outlined text-white text-xl">{error.includes('confirmação') ? 'info' : 'error_outline'}</span>
               </div>
               <div>
-                <p className="text-sm font-black uppercase tracking-tight leading-tight">Falha na Validação</p>
+                <p className="text-sm font-black uppercase tracking-tight leading-tight">{error.includes('confirmação') ? 'Aviso Importante' : 'Falha na Validação'}</p>
                 <p className="text-[11px] font-bold opacity-70">{error}</p>
               </div>
             </div>
@@ -205,7 +257,25 @@ const Profile: React.FC<ProfileProps> = ({ user, onBack, onLogout, onUpdateUser 
               </div>
 
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Usuário de Sistema</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome Completo</label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none text-slate-300 group-focus-within:text-primary transition-colors">
+                    <span className="material-symbols-outlined text-xl">person</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Seu nome completo..."
+                    className="w-full bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800 rounded-2xl text-slate-900 dark:text-white focus:ring-4 focus:ring-primary/10 transition-all font-bold h-14 pl-14 pr-6"
+                    required
+                    disabled={loading}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nickname (Usuário de Sistema)</label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none text-slate-300 group-focus-within:text-primary transition-colors">
                     <span className="material-symbols-outlined text-xl">alternate_email</span>
@@ -216,6 +286,8 @@ const Profile: React.FC<ProfileProps> = ({ user, onBack, onLogout, onUpdateUser 
                     onChange={(e) => setNickname(e.target.value)}
                     placeholder="Nome de usuário para acesso..."
                     className="w-full bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800 rounded-2xl text-slate-900 dark:text-white focus:ring-4 focus:ring-primary/10 transition-all font-bold h-14 pl-14 pr-6"
+                    required
+                    disabled={loading}
                   />
                 </div>
               </div>
@@ -232,6 +304,8 @@ const Profile: React.FC<ProfileProps> = ({ user, onBack, onLogout, onUpdateUser 
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="Seu e-mail corporativo..."
                     className="w-full bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800 rounded-2xl text-slate-900 dark:text-white focus:ring-4 focus:ring-primary/10 transition-all font-bold h-14 pl-14 pr-6"
+                    required
+                    disabled={loading}
                   />
                 </div>
               </div>
@@ -251,7 +325,9 @@ const Profile: React.FC<ProfileProps> = ({ user, onBack, onLogout, onUpdateUser 
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="Nova senha..."
+                    autoComplete="new-password"
                     className={`w-full bg-slate-50 dark:bg-slate-800/50 border rounded-2xl text-slate-900 dark:text-white focus:ring-4 focus:ring-primary/10 transition-all font-bold h-14 px-6 ${error && error.includes('Senha') ? 'border-danger ring-4 ring-danger/10' : 'border-slate-100 dark:border-slate-800'}`}
+                    disabled={loading}
                   />
                 </div>
 
@@ -262,7 +338,9 @@ const Profile: React.FC<ProfileProps> = ({ user, onBack, onLogout, onUpdateUser 
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Repita a senha..."
+                    autoComplete="new-password"
                     className={`w-full bg-slate-50 dark:bg-slate-800/50 border rounded-2xl text-slate-900 dark:text-white focus:ring-4 focus:ring-primary/10 transition-all font-bold h-14 px-6 ${error && error.includes('divergente') ? 'border-danger ring-4 ring-danger/10' : 'border-slate-100 dark:border-slate-800'}`}
+                    disabled={loading}
                   />
                 </div>
               </div>
@@ -273,10 +351,15 @@ const Profile: React.FC<ProfileProps> = ({ user, onBack, onLogout, onUpdateUser 
           <div className="max-w-xs mx-auto w-full pt-4">
             <button
               type="submit"
-              className="w-full bg-slate-900 dark:bg-primary text-white font-black py-5 rounded-2xl shadow-2xl shadow-primary/20 transition-all active:scale-95 flex items-center justify-center gap-3 uppercase text-xs tracking-[0.2em] hover:brightness-110"
+              disabled={loading}
+              className="w-full bg-slate-900 dark:bg-primary text-white font-black py-5 rounded-2xl shadow-2xl shadow-primary/20 transition-all active:scale-95 flex items-center justify-center gap-3 uppercase text-xs tracking-[0.2em] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <span className="material-symbols-outlined text-xl">shield_check</span>
-              Sincronizar Dados
+              {loading ? (
+                <span className="material-symbols-outlined text-xl animate-spin">sync</span>
+              ) : (
+                <span className="material-symbols-outlined text-xl">shield_check</span>
+              )}
+              {loading ? 'Sincronizando...' : 'Sincronizar Dados'}
             </button>
           </div>
         </form>

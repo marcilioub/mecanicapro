@@ -25,7 +25,7 @@ import { generateId } from './utils';
 import { checkIsAdmin } from './types';
 
 const App: React.FC = () => {
-  const { user, loading: authLoading, signOut } = useAuth();
+  const { user, loading: authLoading, signOut, refreshSession } = useAuth();
   const navigate = useNavigate();
 
   const [state, setState] = useState<AppState & {
@@ -273,25 +273,30 @@ const App: React.FC = () => {
 
       const mappedGroups: SectorGroup[] = (groups || []).map((g: any) => mapSectorGroupFromDb(g));
 
-      setState(prev => ({
-        ...prev,
-        tickets: mappedTickets,
-        users: mappedUsers,
-        messages: mappedMessages,
-        machines: (machines as any[]) || [],
-        activityLogs: mappedLogs || [],
-        warehouses: (warehouses as any[]) || [],
-        groups: mappedGroups || [],
-        jobRoles: mappedJobRoles || [],
-        connectionStatus: 'online',
-        lastSync: new Date().toISOString(),
-        dataStats: {
-          tickets: mappedTickets.length,
-          users: mappedUsers.length,
-          messages: mappedMessages.length,
-          machines: (machines as any[])?.length || 0
-        }
-      }));
+      setState(prev => {
+        const updatedCurrentUser = mappedUsers.find(u => u.id === user?.id) || prev.currentUser;
+
+        return {
+          ...prev,
+          currentUser: updatedCurrentUser,
+          tickets: mappedTickets,
+          users: mappedUsers,
+          messages: mappedMessages,
+          machines: (machines as any[]) || [],
+          activityLogs: mappedLogs || [],
+          warehouses: (warehouses as any[]) || [],
+          groups: mappedGroups || [],
+          jobRoles: mappedJobRoles || [],
+          connectionStatus: 'online',
+          lastSync: new Date().toISOString(),
+          dataStats: {
+            tickets: mappedTickets.length,
+            users: mappedUsers.length,
+            messages: mappedMessages.length,
+            machines: (machines as any[])?.length || 0
+          }
+        };
+      });
 
       console.log('✅ Sincronização com Supabase concluída');
     } catch (error: any) {
@@ -708,7 +713,10 @@ const App: React.FC = () => {
           user={state.currentUser as User}
           onBack={() => navigateTo('dashboard')}
           onLogout={handleLogout}
-          onUpdateUser={() => fetchData()}
+          onUpdateUser={async () => {
+            await fetchData();
+            await refreshSession(); // Garante que AuthContext pegue as mudanças
+          }}
         />
       )}
 
