@@ -26,16 +26,25 @@ const Login: React.FC = () => {
       if (!emailToAuth.includes('@')) {
         console.log('🔍 Nickname detectado, buscando e-mail correspondente:', emailToAuth);
 
-        const { data: profileData, error: profileError } = await supabase
+        // Timeout de 10 segundos para o nickname
+        const nicknameSearchPromise = supabase
           .from('profiles')
           .select('email')
           .ilike('nickname', emailToAuth)
           .single();
 
-        if (profileError || !profileData?.email) {
-          console.error('❌ Usuário não encontrado pelo nickname:', profileError);
-          throw new Error('Usuário não encontrado.');
-        }
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Busca expirou. Use seu e-mail.')), 10000)
+        );
+
+        const { data: profileData, error: profileError } = await Promise.race([
+          nicknameSearchPromise,
+          timeoutPromise
+        ]) as any;
+
+        console.log('📡 Resposta da busca de nickname:', { profileData, profileError });
+
+        if (profileError || !profileData?.email) throw new Error('Usuário não encontrado.');
 
         emailToAuth = profileData.email;
         console.log('📧 E-mail resolvido para o nickname:', emailToAuth);
@@ -51,26 +60,15 @@ const Login: React.FC = () => {
       if (authError) throw authError;
 
       if (data.user) {
-        console.log('✅ Login via Supabase OK:', data.user.id);
-
-        // Em vez de passar o usuário manualmente, confiamos no AuthContext.
-        // O onAuthStateChange no AuthContext vai detectar o login e buscar o perfil.
-        // Apenas redirecionamos para o dashboard.
-        try {
-          // Força atualização imediata do contexto para evitar precisar recarregar a página
-          await refreshSession();
-        } catch (e) {
-          console.warn('refreshSession falhou, prosseguindo com navigate', e);
-        }
+        console.log('✅ Login OK, forçando redirecionamento...');
         navigate('/');
       }
     } catch (err: any) {
       console.error('❌ Falha no login:', err.message);
+      setError(err.message === 'Invalid login credentials' ? 'Dados inválidos.' : err.message);
+    } finally {
+      // Bloqueio de Loop de Carregamento Infinito
       setLoading(false);
-
-      setError(err.message === 'Invalid login credentials'
-        ? 'E-mail ou senha incorretos.'
-        : err.message);
     }
   };
 

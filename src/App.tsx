@@ -64,58 +64,16 @@ const App: React.FC = () => {
     setTimeout(() => setSaveNotification(null), 3000);
   };
 
-  // --- REALTIME SUBSCRIPTION (MESSAGES) ---
-  const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // --- REMOVED REDUNDANT AUTH LOGIC: AuthContext handles this ---
+  const [loading, setLoading] = useState(false);
   const lastFetchedUserId = useRef<string | null>(null);
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setLoading(false);
-      console.log('Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
-      console.log('Supabase Key (anon):',
-        import.meta.env.VITE_SUPABASE_ANON_KEY?.slice(0, 8) + '...'
-      );
 
-    });
-
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session);
-      }
-    );
-
-    return () => {
-      listener.subscription.unsubscribe();
-    };
-  }, []);
+  // No topo do componente, para depuração
+  console.log(`[App Render] user: ${user?.email || 'null'}, session: ${!!user}, loading: ${authLoading}`);
 
   // Realtime subscription for activity_logs to keep timeline in sync
   useEffect(() => {
-    function App() {
-
-      // 🔹 calcule antes do return
-      const isUserAdmin = checkIsAdmin(state.currentUser?.jobRoleId);
-
-      console.log("JobRoleId atual:", state.currentUser?.jobRoleId);
-      console.log("É admin?", isUserAdmin);
-
-      return (
-        <>
-          {state.view === 'activity_report' && (
-            isUserAdmin ? (
-              <ActivityReport />
-            ) : (
-              <div className="p-10 text-center text-slate-500">
-                Acesso negado. Apenas administradores podem ver este relatório.
-              </div>
-            )
-          )}
-        </>
-      );
-    }
-
     const chan = supabase.channel('public:activity_logs')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_logs' }, (payload) => {
         try {
@@ -300,32 +258,23 @@ const App: React.FC = () => {
 
       console.log('✅ Sincronização com Supabase concluída');
     } catch (error: any) {
-      console.error('❌ Erro fatal no fetchData:', error);
-      setState(prev => ({ ...prev, connectionStatus: 'error' }));
-      showNotification(`Erro crítico de conexão: ${error?.message || 'Erro desconhecido'}`, 'error');
+      console.error('❌ Erro no fetchData:', error);
+      // Erro de dados NÃO desloga o usuário
     }
   }, [user]);
 
   useEffect(() => {
+    // Sincronização Simplificada: Só atualiza se o usuário mudar
     if (!authLoading && user) {
-      // Sincroniza usuário e busca dados apenas se o ID do usuário mudou
       if (lastFetchedUserId.current !== user.id) {
-        console.log(`🔑 Login detectado: ${user.name} (${user.id})`);
         lastFetchedUserId.current = user.id;
-
-        setState(prev => ({
-          ...prev,
-          currentUser: {
-            ...user,
-            role: user.role || 'Mecânico',
-            name: user.name || user.email?.split('@')[0] || 'Usuário'
-          } as User
-        }));
-
+        setState(prev => ({ ...prev, currentUser: user }));
         fetchData();
       }
-    } else if (!authLoading && !user) {
+    } else if (!authLoading && !user && lastFetchedUserId.current) {
+      // Logout limpo
       lastFetchedUserId.current = null;
+      setState(prev => ({ ...prev, currentUser: null }));
     }
   }, [user, authLoading, fetchData]);
 
