@@ -73,6 +73,20 @@ const App: React.FC = () => {
   // No topo do componente, para depuração
   console.log(`[App Render] user: ${user?.email || 'null'}, session: ${!!user}, loading: ${authLoading}`);
 
+  // Função para Alerta Sensorial (Vibração e Som)
+  const triggerSensoryAlert = useCallback(() => {
+    // 1. Vibração [200, 100, 200]
+    if ('vibrate' in navigator) {
+      navigator.vibrate([200, 100, 200]);
+    }
+
+    // 2. Som (alerta.mp3 na pasta public)
+    const audio = new Audio('/alerta.mp3');
+    audio.play().catch(err => {
+      console.warn('Som bloqueado pelo navegador. Interaja com a página primeiro.', err);
+    });
+  }, []);
+
   // Realtime subscription for activity_logs to keep timeline in sync
   useEffect(() => {
     const chan = supabase.channel('public:activity_logs')
@@ -118,6 +132,34 @@ const App: React.FC = () => {
       }
     };
   }, []);
+
+  // Realtime subscription for tickets (Instant updates + Alerts)
+  useEffect(() => {
+    const ticketChan = supabase.channel('tickets-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tickets' }, (payload) => {
+        console.log('🔔 Novo chamado detectado via Realtime:', payload.new);
+
+        const newTicket = payload.new as Ticket;
+
+        // Atualiza a lista de chamados no estado sem recarregar
+        setState(prev => {
+          // Evita duplicatas caso o INSERT local já tenha adicionado
+          if (prev.tickets.some(t => t.id === newTicket.id)) return prev;
+          return {
+            ...prev,
+            tickets: [newTicket, ...prev.tickets]
+          };
+        });
+
+        // Dispara o alerta sensorial
+        triggerSensoryAlert();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(ticketChan);
+    };
+  }, [triggerSensoryAlert]);
 
   const fetchData = useCallback(async () => {
     try {
