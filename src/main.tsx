@@ -50,3 +50,16 @@ try {
   console.error("❌ Erro crítico na inicialização do React:", error);
   rootElement.innerHTML = `<div style="padding:40px; font-family: sans-serif;">Error: ${error.message}</div>`;
 }
+
+// Registro do Service Worker para PWA
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(registration => {
+        console.log('SW: Registrado com sucesso:', registration.scope);
+      })
+      .catch(error => {
+        console.error('SW: Falha no registro:', error);
+      });
+  });
+}

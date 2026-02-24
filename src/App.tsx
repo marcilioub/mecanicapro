@@ -23,6 +23,7 @@ import defaultAvatar from './assets/default-avatar.svg';
 import Avatar from './components/Avatar';
 import { generateId } from './utils';
 import { checkIsAdmin } from './types';
+import PWAInstall from './components/PWAInstall';
 
 const App: React.FC = () => {
   const { user, loading: authLoading, signOut, refreshSession } = useAuth();
@@ -415,13 +416,25 @@ const App: React.FC = () => {
           }}
           onDelete={async (id: string) => {
             try {
-              const { error } = await supabase.from('tickets').delete().eq('id', id);
+              console.log(`[onDelete] Tentando excluir chamado ID: ${id}`);
+              const { error, count } = await supabase
+                .from('tickets')
+                .delete({ count: 'exact' })
+                .eq('id', id);
+
               if (error) {
                 console.error('Erro ao deletar chamado:', error);
-                showNotification('Erro ao deletar chamado', 'error');
+                showNotification(`Erro ao deletar chamado: ${error.message}`, 'error');
+              } else if (count === 0) {
+                console.warn('Nenhum chamado foi excluído. Verifique permissões RLS ou se o ID existe.');
+                showNotification('Não foi possível excluir o chamado (permissão negada)', 'error');
               } else {
+                console.log(`Chamado ${id} excluído com sucesso.`);
                 showNotification('Chamado removido');
-                await fetchData();
+                // Pequeno delay para o usuário ver a notificação antes do reload
+                setTimeout(() => {
+                  window.location.reload();
+                }, 1000);
               }
             } catch (err: any) {
               console.error('Exceção ao deletar chamado:', err);
@@ -1009,6 +1022,7 @@ const App: React.FC = () => {
           <span className="font-bold text-sm">{saveNotification.message}</span>
         </div>
       )}
+      <PWAInstall />
     </Layout>
   );
 };

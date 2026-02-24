@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Ticket, TicketStatus, User, UserRole, TicketPriority } from '../types';
+import { Ticket, TicketStatus, User, UserRole, TicketPriority, ADMIN_ROLE_ID } from '../types';
 import { useTheme } from './ThemeContext';
-import { formatDuration } from '../utils';
+import { formatDuration, isAdmin } from '../utils';
 
 interface TicketListProps {
   currentUser: User;
@@ -64,7 +64,7 @@ const TicketList: React.FC<TicketListProps> = ({ currentUser, tickets, users, on
 
 
   const isCreator = (ticket: Ticket) => {
-    return ticket.requester.toLowerCase() === currentUser.name.toLowerCase();
+    return ticket.createdBy === currentUser.id;
   };
 
   const canAccept = (ticket: Ticket) => {
@@ -76,7 +76,7 @@ const TicketList: React.FC<TicketListProps> = ({ currentUser, tickets, users, on
   };
 
   const canDelete = (ticket: Ticket) => {
-    return isCreator(ticket);
+    return isCreator(ticket) || isAdmin(currentUser);
   };
 
   const getMechanicNames = (ticket: Ticket) => {
